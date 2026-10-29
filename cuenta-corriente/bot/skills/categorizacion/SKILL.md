@@ -1,38 +1,33 @@
 ---
 name: categorizacion
-description: Cómo proponer y confirmar categorías de gastos Banco de Chile.
+description: Usa cuando el usuario pegue cartola/EECC/aviso de compra, pida categorizar gastos, o haya movimientos sin categoría.
 ---
 
-# Categorización
+# Categorización Banco de Chile
 
-## Categorías base
+## Categorías base (usar estas en `set_category`)
 
-- `comida_delivery` — Uber Eats, Rappi, PedidosYa
-- `restaurantes` — locales, pastelería, café
-- `supermercado` — Jumbo, Express, convenience / MERPAGO*CONVENIENCE
-- `transporte` — Uber Trip, Red Movilidad, peajes
-- `suscripciones` — Microsoft, streaming, software
-- `fitness` — gimnasios
-- `salud` — farmacia, clínicas
-- `donaciones` — UNICEF, Coaniquem, fundaciones
-- `transferencias_enviadas` / `transferencias_recibidas`
-- `pagos_servicios`, `estacionamiento`, `entretencion`
-- `seguros_bancarios`, `linea_credito`, `sueldo_ingresos`
-- `otros` — residual
+`comida`, `transporte`, `supermercado`, `suscripciones`, `transferencias`, `salud`, `fitness`, `donaciones`, `servicios`, `entretenimiento`, `vivienda`, `ingresos`, `bancario`, `otros`.
 
-## Reglas
+Pistas frecuentes:
 
-1. Si `parse_statement` ya dejó `suggestedCategory`, úsala como propuesta.
-2. Comercio nuevo o ambiguo → pregunta al usuario una sola vez; luego `set_category` + recordar merchant.
-3. No mezcles abonos (sueldo, traspasos DE) con gastos en el mismo bucket de “gastos”.
-4. Avisos de compra (`Compra con Tarjeta de Crédito`) tienen merchant en mayúsculas tipo `MERPAGO*CONVENIENCEDE` — propón `supermercado` salvo que el usuario diga otra cosa.
-5. Para un aviso nuevo: `parse_statement` → muestra monto/comercio/fecha → pregunta solo si la categoría propuesta no convence.
+- Uber Eats / Rappi / PedidosYa / restaurantes → `comida`
+- Uber Trip / Red Movilidad / peajes / estacionamiento → `transporte`
+- Jumbo / Express / MercadoPago convenience / MASS / SBX → `supermercado`
+- Microsoft / streaming / software → `suscripciones`
+- Traspasos A/DE / transferencias → `transferencias`
+- Power Fitness / Equinox → `fitness`
+- UNICEF / Coaniquem / fundaciones → `donaciones`
+- Avisos `Compra con Tarjeta de Crédito` (merchant tipo `MERPAGO*CONVENIENCEDE`) → suele ser `supermercado`
 
 ## Procedimiento
 
 1. Texto nuevo (aviso de compra, cartola o Visa) → `parse_statement`.
-2. `list_transactions` con `uncategorizedOnly: true`.
-3. Propón categorías; una pregunta por comercio ambiguo.
-4. Confirmación → `set_category` (`learnMerchant: true`).
-5. Si pide resumen → `category_summary`.
-6. Si cambia frecuencia → `set_tracking_preference` + `reminders_create` / `reminders_cancel`.
+2. Si el parse ya dejó `proposedCategory`, úsala como propuesta.
+3. `list_transactions` con `uncategorizedOnly: true`.
+4. Comercio nuevo o ambiguo → pregunta una sola vez; no una pregunta por cada fila del mismo comercio.
+5. Confirmación → `set_category` (`learnMerchant: true` salvo que digan lo contrario).
+6. Si pide resumen → `category_summary`.
+7. Si cambia frecuencia → `set_tracking_preference` + `reminders_create` / `reminders_cancel`.
+
+No mezcles abonos (sueldo, traspasos DE) con cargos en el mismo bucket de “gastos del mes”.

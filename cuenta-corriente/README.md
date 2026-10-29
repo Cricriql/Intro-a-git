@@ -1,11 +1,11 @@
 # cuenta-corriente
 
-Agent SDK bot that categorizes Banco de Chile **cartola** (cuenta corriente) and **Visa EECC** statement text, learns merchant→category mappings, and runs weekly spend tracking (cadence is changeable).
+Agent SDK bot that categorizes Banco de Chile **cartola** (cuenta corriente), **Visa EECC**, and purchase-alert email text; learns merchant→category mappings; and runs weekly spend tracking (cadence is changeable).
 
 ## Surfaces (v1)
 
 - Playground + HTTP (`agent-sdk dev` / `serve`)
-- Weekly markdown schedule (`bot/schedules/weekly-spend.md`, Mondays 13:00 UTC)
+- Weekly markdown schedule (`bot/schedules/weekly-review.md`, Mondays 13:00 UTC)
 - Builtin conversation reminders (`builtinTools.reminders`)
 - No Slack yet
 - Gmail OAuth later for `christian.arriagada12@gmail.com` (paste/upload text in v1)
