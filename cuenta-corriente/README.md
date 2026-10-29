@@ -1,40 +1,57 @@
 # cuenta-corriente
 
-Agent SDK bot that categorizes Banco de Chile **cartola** (cuenta corriente), **Visa EECC**, and purchase-alert email text; learns merchant→category mappings; and runs weekly spend tracking (cadence is changeable).
+Agente Agent SDK para gastos Banco de Chile con **sync automático de Gmail**, memoria de categorías y estado de cuenta consultable.
 
-## Surfaces (v1)
+## Qué hace
 
-- Playground + HTTP (`agent-sdk dev` / `serve`)
-- Weekly markdown schedule (`bot/schedules/weekly-review.md`, Mondays 13:00 UTC)
-- Builtin conversation reminders (`builtinTools.reminders`)
-- No Slack yet
-- Gmail OAuth later for `christian.arriagada12@gmail.com` (paste/upload text in v1)
+- Cada 15 minutos revisa Gmail (avisos de compra, cartola, EECC).
+- Parsea mails y PDFs, guarda movimientos en memoria durable (`host.kv`).
+- Aprende comercio→categoría cuando confirmas.
+- Responde estado de cuenta / “cuánto llevo” con `account_status`.
+- Seguimiento semanal (cambiable).
 
-## Privacy
+## Secretos (obligatorios para lo automático)
 
-- Do **not** commit raw PDFs, EMLs, full account/card numbers, transfer counterparty names, or the PDF unlock password.
-- Put the PDF password only in a secret / env such as `STATEMENT_PDF_PASSWORD` if a future extractor needs it. Prefer redacted text fixtures under `bot/sandbox/workspace/fixtures/`.
+Copia `.env.example` → `.env.local` (local) o configúralos en el deploy:
 
-## Quick start
+| Secreto | Uso |
+| --- | --- |
+| `GMAIL_USER` | `christian.arriagada12@gmail.com` |
+| `GMAIL_APP_PASSWORD` | Contraseña de aplicación de Google (2FA) |
+| `STATEMENT_PDF_PASSWORD` | Clave de PDFs cartola/EECC |
+
+Solo lectura IMAP. No pide clave del banco.
+
+También: `pip install pypdf` en el entorno donde corra el agente (para PDFs cifrados).
+
+## Uso local
 
 ```bash
 cd cuenta-corriente
 npm install
-npx --yes "@grok/agent-sdk@0.5.0" validate --dir .
-npx tsc --noEmit -p .
-npx --yes "@grok/agent-sdk@0.5.0" tool call get_tracking_preference --dir . --input '{}' --json
-npx --yes "@grok/agent-sdk@0.5.0" tool call parse_statement --dir . --input '{"text":"D01/09 PAGO:JUMBO CENTRAL 38.000"}' --json
+cp .env.example .env.local   # completa secretos
+npx --yes "@grok/agent-sdk@0.5.0" login
+npx --yes "@grok/agent-sdk@0.5.0" serve --dir . --mode single --dev
 ```
 
-Model turns need a Cursor credential:
+Playground: http://127.0.0.1:3000/playground
+
+Prueba sync manual:
 
 ```bash
-npx --yes "@grok/agent-sdk@0.5.0" login
-npx --yes "@grok/agent-sdk@0.5.0" run --dir . --message "Pegaré una cartola; primero dime la cadencia de seguimiento."
-npx --yes "@grok/agent-sdk@0.5.0" serve --dir . --mode single --dev
-# http://127.0.0.1:3000/playground
+npx --yes "@grok/agent-sdk@0.5.0" tool call sync_gmail --dir . --input '{"fullHistory":true,"limit":50}'
+npx --yes "@grok/agent-sdk@0.5.0" tool call account_status --dir . --input '{}'
 ```
 
-## Tools
+Dispatch del poll en dev:
 
-`parse_statement`, `list_transactions`, `set_category`, `category_summary`, `get_tracking_preference`, `set_tracking_preference`.
+```bash
+curl -X POST http://127.0.0.1:3000/cuenta-corriente/v1/dev/schedules/gmail-poll
+```
+
+## Preguntas útiles
+
+- “Sincroniza el correo y dame el estado”
+- “¿Cuánto llevo gastado este mes?”
+- “Categorízalo como comida y recuérdalo”
+- “Cámbialo a seguimiento diario”

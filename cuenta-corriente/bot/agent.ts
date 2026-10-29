@@ -9,4 +9,8 @@ export default defineAgent({
     ],
   },
   builtinTools: { reminders: true },
+  hosting: {
+    egressDomains: ["imap.gmail.com", "gmail.com", "googleapis.com", "oauth2.googleapis.com"],
+    secretNames: ["GMAIL_USER", "GMAIL_APP_PASSWORD", "STATEMENT_PDF_PASSWORD"],
+  },
 });

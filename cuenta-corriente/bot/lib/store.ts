@@ -10,6 +10,13 @@ import type {
 const TXS_KEY = "txs";
 const RULES_KEY = "merchant_rules";
 const PREF_KEY = "tracking_preference";
+const GMAIL_SYNC_KEY = "gmail_sync";
+
+export type GmailSyncState = {
+  seenMessageIds: string[];
+  lastUid: number;
+  lastSyncAt: string | null;
+};
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 
@@ -76,6 +83,31 @@ export function isCadence(value: string): value is TrackingCadence {
     value === "biweekly" ||
     value === "uncategorized_only"
   );
+}
+
+export async function loadGmailSync(kv: Kv): Promise<GmailSyncState> {
+  const raw = await kv.get(GMAIL_SYNC_KEY);
+  if (raw && typeof raw === "object") {
+    const obj = raw as Partial<GmailSyncState>;
+    return {
+      seenMessageIds: Array.isArray(obj.seenMessageIds)
+        ? obj.seenMessageIds.filter((x): x is string => typeof x === "string")
+        : [],
+      lastUid: typeof obj.lastUid === "number" ? obj.lastUid : 0,
+      lastSyncAt: typeof obj.lastSyncAt === "string" ? obj.lastSyncAt : null,
+    };
+  }
+  return { seenMessageIds: [], lastUid: 0, lastSyncAt: null };
+}
+
+export async function saveGmailSync(kv: Kv, state: GmailSyncState): Promise<void> {
+  // Cap seen ids so kv stays bounded.
+  const seenMessageIds = state.seenMessageIds.slice(-2000);
+  await kv.put(GMAIL_SYNC_KEY, {
+    seenMessageIds,
+    lastUid: state.lastUid,
+    lastSyncAt: state.lastSyncAt,
+  } as unknown as JsonValue);
 }
 
 export type MergeResult = {
