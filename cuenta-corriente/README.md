@@ -1,57 +1,84 @@
 # cuenta-corriente
 
-Agente Agent SDK para gastos Banco de Chile con **sync automático de Gmail**, memoria de categorías y estado de cuenta consultable.
+Agente always-on de gastos Banco de Chile: revisa Gmail cada **15 minutos**, actualiza la memoria y regenera un **HTML de estado**.
 
-## Qué hace
+## Qué hace (flujo)
 
-- Cada 15 minutos revisa Gmail (avisos de compra, cartola, EECC).
-- Parsea mails y PDFs, guarda movimientos en memoria durable (`host.kv`).
-- Aprende comercio→categoría cuando confirmas.
-- Responde estado de cuenta / “cuánto llevo” con `account_status`.
-- Seguimiento semanal (cambiable).
+```
+Gmail (IMAP solo lectura)
+   │  cada 15 min → schedule gmail-poll
+   ▼
+sync_gmail  → parsea avisos / cartola / EECC
+   │
+   ├─ host.kv (movimientos + categorías aprendidas)
+   └─ HTML dashboard
+         ├─ artifact "spend-dashboard"
+         └─ host.files: dashboard/estado.html
+```
 
-## Secretos (obligatorios para lo automático)
+También puedes preguntarle en el playground: *“estado de la cuenta”*, *“sincroniza”*, *“regenera el HTML”*.
 
-Copia `.env.example` → `.env.local` (local) o configúralos en el deploy:
+## Dejarlo siempre activo
+
+`--dev` **no** dispara el cron solo. Para que corra cada 15 min necesitas una de estas:
+
+### A) Deploy en Cursor (recomendado)
+
+1. Configura secretos en el deployment: `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `STATEMENT_PDF_PASSWORD`.
+2. Desde tu máquina (con cuenta/service account):
+
+```bash
+cd cuenta-corriente
+npx --yes "@grok/agent-sdk@0.5.0" validate --dir .
+npx --yes "@grok/agent-sdk@0.5.0" deploy --dir . --dry-run
+npx --yes "@grok/agent-sdk@0.5.0" deploy --dir .
+```
+
+3. Gestiona el agente en https://cursor.com/dashboard/deployed-agents  
+4. El schedule `gmail-poll` queda activo en hosting; el HTML se actualiza solo.
+
+### B) Servidor propio 24/7
+
+```bash
+cd cuenta-corriente
+# .env.local con los 3 secretos
+npx --yes "@grok/agent-sdk@0.5.0" serve --dir . --mode single
+# sin --dev → los cron sí disparan
+```
+
+### C) Solo desarrollo
+
+```bash
+npx --yes "@grok/agent-sdk@0.5.0" serve --dir . --mode single --dev
+# forzar poll:
+curl -X POST http://127.0.0.1:3000/cuenta-corriente/v1/dev/schedules/gmail-poll
+```
+
+## Secretos
 
 | Secreto | Uso |
 | --- | --- |
 | `GMAIL_USER` | `christian.arriagada12@gmail.com` |
-| `GMAIL_APP_PASSWORD` | Contraseña de aplicación de Google (2FA) |
-| `STATEMENT_PDF_PASSWORD` | Clave de PDFs cartola/EECC |
+| `GMAIL_APP_PASSWORD` | Contraseña de aplicación Google (2FA) |
+| `STATEMENT_PDF_PASSWORD` | Clave PDF cartola/EECC |
 
-Solo lectura IMAP. No pide clave del banco.
+También: `pip install pypdf` en el entorno del agente.
 
-También: `pip install pypdf` en el entorno donde corra el agente (para PDFs cifrados).
+## Ver el HTML
 
-## Uso local
+Tras un sync:
+
+1. Artifact `spend-dashboard` → `GET /cuenta-corriente/v1/artifacts/<id>/content`
+2. O archivo durable `dashboard/estado.html` (scope deployment)
+3. O en chat: *“regenera el dashboard y dame el link/id del artifact”*
+
+El HTML se auto-refresca en el navegador cada 15 min (`meta refresh`).
+
+## Uso local rápido
 
 ```bash
-cd cuenta-corriente
 npm install
-cp .env.example .env.local   # completa secretos
+cp .env.example .env.local
 npx --yes "@grok/agent-sdk@0.5.0" login
 npx --yes "@grok/agent-sdk@0.5.0" serve --dir . --mode single --dev
 ```
-
-Playground: http://127.0.0.1:3000/playground
-
-Prueba sync manual:
-
-```bash
-npx --yes "@grok/agent-sdk@0.5.0" tool call sync_gmail --dir . --input '{"fullHistory":true,"limit":50}'
-npx --yes "@grok/agent-sdk@0.5.0" tool call account_status --dir . --input '{}'
-```
-
-Dispatch del poll en dev:
-
-```bash
-curl -X POST http://127.0.0.1:3000/cuenta-corriente/v1/dev/schedules/gmail-poll
-```
-
-## Preguntas útiles
-
-- “Sincroniza el correo y dame el estado”
-- “¿Cuánto llevo gastado este mes?”
-- “Categorízalo como comida y recuérdalo”
-- “Cámbialo a seguimiento diario”

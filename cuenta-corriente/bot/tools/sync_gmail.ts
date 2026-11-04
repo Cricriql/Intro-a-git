@@ -3,6 +3,7 @@ import { defineTool } from "@grok/agent-sdk/tools";
 import * as z from "zod/v4";
 import { fetchBankMails, readGmailConfig } from "../lib/gmail.js";
 import { parseStatementText } from "../lib/parse-statement.js";
+import { publishDashboard } from "../lib/publish-dashboard.js";
 import {
   loadGmailSync,
   mergeParsedTransactions,
@@ -13,8 +14,7 @@ export default defineTool({
   description: prompt`
     Sync Banco de Chile emails from Gmail (purchase alerts, cartola, EECC).
     Parses bodies and PDF attachments, upserts transactions into durable memory,
-    and remembers message ids so repeats are skipped. Call on startup questions
-    about account status, or when the user asks to refresh/sync mail.
+    regenerates the HTML dashboard, and remembers message ids so repeats are skipped.
   `,
   execution: "server",
   effect: "idempotent",
@@ -83,6 +83,12 @@ export default defineTool({
     };
     await saveGmailSync(ctx.host.kv, next);
 
+    const dashboard = await publishDashboard({
+      kv: ctx.host.kv,
+      files: ctx.host.files,
+      artifacts: ctx.artifacts,
+    });
+
     return {
       ok: true,
       mailsFetched: mails.length,
@@ -93,10 +99,15 @@ export default defineTool({
       lastUid: next.lastUid,
       lastSyncAt: next.lastSyncAt,
       samples: samples.slice(-10),
+      dashboard: {
+        artifactId: dashboard.artifactId,
+        path: dashboard.path,
+        transactionCount: dashboard.transactionCount,
+      },
       hint:
         txsAdded === 0 && mailsProcessed === 0
-          ? "Sin correos nuevos. Si esperabas histórico, llama con fullHistory:true o sube un PDF/EML."
-          : "Memoria actualizada. Usa account_status o category_summary para el estado.",
+          ? "Sin correos nuevos. El HTML igual se regeneró con la memoria actual."
+          : "Memoria y HTML actualizados. Pregunta el estado o abre el artifact spend-dashboard.",
     };
   },
 });
