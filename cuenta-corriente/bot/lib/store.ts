@@ -21,6 +21,8 @@ export type GmailSyncState = {
   seenMessageIds: string[];
   lastUid: number;
   lastSyncAt: string | null;
+  /** A full pass already re-read statement PDFs that an older parser had skipped. */
+  historyScanned?: boolean;
 };
 
 type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
@@ -100,9 +102,10 @@ export async function loadGmailSync(kv: Kv): Promise<GmailSyncState> {
         : [],
       lastUid: typeof obj.lastUid === "number" ? obj.lastUid : 0,
       lastSyncAt: typeof obj.lastSyncAt === "string" ? obj.lastSyncAt : null,
+      historyScanned: obj.historyScanned === true,
     };
   }
-  return { seenMessageIds: [], lastUid: 0, lastSyncAt: null };
+  return { seenMessageIds: [], lastUid: 0, lastSyncAt: null, historyScanned: false };
 }
 
 export async function loadStatementSummary(kv: Kv): Promise<StatementSummary | null> {
@@ -119,6 +122,8 @@ export async function loadStatementSummary(kv: Kv): Promise<StatementSummary | n
     cupoTotal: num(obj.cupoTotal),
     cupoDisponible: num(obj.cupoDisponible),
     saldoCuotas: num(obj.saldoCuotas),
+    cuotasFacturadas: num(obj.cuotasFacturadas),
+    comprasContado: num(obj.comprasContado),
   };
 }
 
@@ -139,6 +144,7 @@ export async function saveGmailSync(kv: Kv, state: GmailSyncState): Promise<void
     seenMessageIds,
     lastUid: state.lastUid,
     lastSyncAt: state.lastSyncAt,
+    historyScanned: state.historyScanned === true,
   } as unknown as JsonValue);
 }
 

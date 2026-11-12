@@ -145,6 +145,9 @@ function bankSummaryLine(summary: StatementSummary | null, cuotasLeidas: number)
   if (summary.periodTo) bits.push(`estado al ${summary.periodTo}`);
   if (summary.cupoUtilizado !== null) bits.push(`cupo utilizado ${formatClp(summary.cupoUtilizado)}`);
   if (summary.montoFacturado !== null) bits.push(`monto facturado ${formatClp(summary.montoFacturado)}`);
+  if (summary.cuotasFacturadas !== null) {
+    bits.push(`cuotas de este estado ${formatClp(summary.cuotasFacturadas)}`);
+  }
   if (summary.saldoCuotas !== null) {
     bits.push(`saldo en cuotas ${formatClp(summary.saldoCuotas)}`);
   }
@@ -213,14 +216,21 @@ export function buildDashboardHtml(data: DashboardData): string {
     : (corrienteMonths.at(-1) ?? currentMonth);
   const corrienteShown = view.corriente.filter((tx) => tx.month === corrienteMonth);
   const facturadaTotal = sumAmount(view.facturada);
+  const summary = data.statementSummary ?? null;
   const paid = view.cardPayments.find((tx) => /CARGO POR PAGO TC/i.test(tx.description));
-  const facturadaHeadline = facturadaTotal || (paid ? Math.abs(paid.amount) : 0);
+  const facturadaHeadline = summary?.montoFacturado || facturadaTotal || (paid ? Math.abs(paid.amount) : 0);
   const plans = openInstallments(txs);
   const nextCuotas = plans.reduce((sum, plan) => sum + plan.nextAmount, 0);
   const laterCuotas = plans.reduce((sum, plan) => sum + plan.laterAmount, 0);
   const noFacturadaTotal = sumAmount(view.noFacturada);
   const cuotasEnUtilizado = nextCuotas + laterCuotas;
-  const compareTotal = sumAmount(corrienteShown) + facturadaHeadline + cuotasEnUtilizado;
+  const cuotasHeadline = cuotasEnUtilizado || summary?.cuotasFacturadas || summary?.cupoUtilizado || 0;
+  const cuotasTitle = cuotasEnUtilizado
+    ? "Cuotas en el utilizado"
+    : summary?.cuotasFacturadas
+      ? "Cuotas de este estado"
+      : "Cupo utilizado";
+  const compareTotal = sumAmount(corrienteShown) + facturadaHeadline + cuotasHeadline;
   const share = (n: number) => (compareTotal > 0 ? Math.max(0, (n / compareTotal) * 100) : 0);
 
   const noFacturadaByMonth = [...new Set(view.noFacturada.map((tx) => tx.month))]
@@ -446,7 +456,7 @@ export function buildDashboardHtml(data: DashboardData): string {
     <div class="splitbar" role="img" aria-label="Proporción entre cuenta corriente, lo ya pagado de la tarjeta y las cuotas que siguen en el cupo utilizado">
       <span class="corriente" style="width:${share(sumAmount(corrienteShown)).toFixed(1)}%"></span>
       <span class="facturada" style="width:${share(facturadaHeadline).toFixed(1)}%"></span>
-      <span class="nofact" style="width:${share(cuotasEnUtilizado).toFixed(1)}%"></span>
+      <span class="nofact" style="width:${share(cuotasHeadline).toFixed(1)}%"></span>
     </div>
     <div class="accounts">
       <article class="account corriente">
@@ -474,19 +484,40 @@ export function buildDashboardHtml(data: DashboardData): string {
             : "Según los movimientos del estado"
         }</p>
         ${
+          summary?.montoFacturado
+            ? `<p class="meta">Monto total facturado a pagar, el que imprime EECCTarjetaVisa.pdf.</p>`
+            : ""
+        }
+        ${
           facturadaTotal
             ? paid
               ? `<p class="meta">Pagado desde la cuenta el ${escapeHtml(paid.date)}: ${escapeHtml(formatClp(Math.abs(paid.amount)))}.</p>`
               : `<p class="meta">Todavía no aparece el pago en la cartola.</p>`
-            : `<p class="meta">Este número sale de EECCTarjetaVisa.pdf, el estado de cuenta nacional de la tarjeta: la suma de la columna valor cuota.</p>`
+            : summary?.montoFacturado
+              ? ""
+              : `<p class="meta">Este número sale de EECCTarjetaVisa.pdf, el estado de cuenta nacional de la tarjeta.</p>`
         }
       </article>
       <article class="account nofact">
-        <h2>Cuotas en el utilizado</h2>
-        <p class="adesc meta">Ya están comprometidas y el cupo utilizado las incluye. No se facturan todas en el próximo estado.</p>
-        <div class="avalue">${escapeHtml(formatClp(cuotasEnUtilizado))}</div>
+        <h2>${escapeHtml(cuotasTitle)}</h2>
+        <p class="adesc meta">${
+          cuotasEnUtilizado
+            ? "Ya están comprometidas y el cupo utilizado las incluye. No se facturan todas en el próximo estado."
+            : "Cifra que el estado de cuenta imprime para las cuotas o el cupo utilizado."
+        }</p>
+        <div class="avalue">${escapeHtml(formatClp(cuotasHeadline))}</div>
         <p class="aperiod">${escapeHtml(formatClp(nextCuotas))} entran la próxima vez</p>
-        <p class="meta">${escapeHtml(formatClp(laterCuotas))} siguen para los meses siguientes.</p>
+        <p class="meta">${
+          cuotasEnUtilizado
+            ? `${escapeHtml(formatClp(laterCuotas))} siguen para los meses siguientes.`
+            : summary?.cupoUtilizado
+              ? `Cupo utilizado ${escapeHtml(formatClp(summary.cupoUtilizado))}${
+                  summary.cuotasFacturadas
+                    ? ` · cuotas de este estado ${escapeHtml(formatClp(summary.cuotasFacturadas))}`
+                    : ""
+                }.`
+              : "EECCTarjetaVisa.pdf trae el total de transacciones en cuotas y el cupo utilizado."
+        }</p>
         <p class="meta">Compras avisadas desde el cierre: ${escapeHtml(formatClp(noFacturadaTotal))}${
           view.statementTo ? ` después del ${escapeHtml(formatYmd(view.statementTo))}` : ""
         }. Es el precio de la compra. Si alguna fue en cuotas, la parte que se factura se conoce cuando llegue el estado.</p>

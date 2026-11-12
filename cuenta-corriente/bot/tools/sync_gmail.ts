@@ -47,10 +47,13 @@ export default defineTool({
     }
 
     const sync = await loadGmailSync(ctx.host.kv);
-    const sinceUid = input.fullHistory ? 0 : sync.lastUid;
-    const requested = input.limit ?? (input.fullHistory ? 500 : 50);
-    // A full scan must reach past the old 200 cap even if the caller still sends 200.
-    const limit = input.fullHistory ? Math.max(requested, 500) : requested;
+    // The previous sync may have marked the statement mail as seen and stored
+    // nothing, because the PDF puts each amount far from its label. The first
+    // sync after that fix re-reads those PDFs. Later syncs only fetch new mail.
+    const heal = input.fullHistory === true || sync.historyScanned !== true;
+    const sinceUid = heal ? 0 : sync.lastUid;
+    const requested = input.limit ?? (heal ? 500 : 50);
+    const limit = heal ? Math.max(requested, 500) : requested;
     const mails = await fetchBankMails(cfg, { sinceUid, limit });
 
     const seen = new Set(sync.seenMessageIds);
@@ -60,9 +63,11 @@ export default defineTool({
     let txsSkipped = 0;
     const samples: Array<{ subject: string; source: string; added: number }> = [];
     let maxUid = sync.lastUid;
+    let pdfFailed = 0;
 
     for (const mail of mails) {
       maxUid = Math.max(maxUid, mail.uid);
+      if (mail.pdfFailed) pdfFailed += 1;
       const blobs = [
         { filename: mail.subject, text: mail.text },
         ...mail.attachmentTexts,
@@ -70,7 +75,7 @@ export default defineTool({
       for (const blob of blobs) {
         await rememberStatementSummary(ctx.host.kv, parseStatementSummary(blob.text));
       }
-      if (seen.has(mail.messageId)) {
+      if (seen.has(mail.messageId) && !heal) {
         mailsSkipped += 1;
         continue;
       }
@@ -96,6 +101,8 @@ export default defineTool({
       seenMessageIds: [...seen],
       lastUid: maxUid,
       lastSyncAt: new Date().toISOString(),
+      // Keep retrying while a statement PDF could not be opened.
+      historyScanned: pdfFailed > 0 ? sync.historyScanned === true : true,
     };
     await saveGmailSync(ctx.host.kv, next);
 
@@ -113,6 +120,8 @@ export default defineTool({
       mailsSkipped,
       txsAdded,
       txsSkipped,
+      pdfFailed,
+      rereadHistory: heal,
       lastUid: next.lastUid,
       lastSyncAt: next.lastSyncAt,
       samples: samples.slice(-10),
@@ -122,9 +131,11 @@ export default defineTool({
         transactionCount: dashboard.transactionCount,
       },
       hint:
-        txsAdded === 0 && mailsProcessed === 0
-          ? "Sin correos nuevos. El HTML igual se regeneró con la memoria actual."
-          : "Memoria y HTML actualizados. Pregunta el estado o abre el artifact spend-dashboard.",
+        pdfFailed > 0
+          ? "Hay un PDF del banco que no se pudo abrir. Revisa STATEMENT_PDF_PASSWORD y vuelve a sincronizar."
+          : txsAdded === 0 && mailsProcessed === 0
+            ? "Sin correos nuevos. El HTML igual se regeneró con la memoria actual."
+            : "Memoria y HTML actualizados. Pregunta el estado o abre el archivo estado.html.",
     };
   },
 });

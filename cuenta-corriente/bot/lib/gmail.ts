@@ -13,6 +13,8 @@ export type FetchedMail = {
   date: string | null;
   text: string;
   attachmentTexts: Array<{ filename: string; text: string }>;
+  /** A PDF attachment was present and could not be decrypted or read. */
+  pdfFailed: boolean;
 };
 
 export type GmailConfig = {
@@ -99,11 +101,16 @@ export async function fetchBankMails(
         if (parsed.html) textParts.push(String(parsed.html));
 
         const attachmentTexts: FetchedMail["attachmentTexts"] = [];
+        let pdfFailed = false;
         for (const att of parsed.attachments ?? []) {
           const name = att.filename ?? "attachment";
           if (!/\.pdf$/i.test(name) && att.contentType !== "application/pdf") continue;
           const extracted = extractPdfText(att.content, cfg.pdfPassword);
-          if (extracted) attachmentTexts.push({ filename: name, text: extracted });
+          if (!extracted) {
+            pdfFailed = true;
+            continue;
+          }
+          attachmentTexts.push({ filename: name, text: extracted });
         }
 
         out.push({
@@ -114,6 +121,7 @@ export async function fetchBankMails(
           date: parsed.date ? parsed.date.toISOString() : null,
           text: textParts.join("\n"),
           attachmentTexts,
+          pdfFailed,
         });
       }
     } finally {

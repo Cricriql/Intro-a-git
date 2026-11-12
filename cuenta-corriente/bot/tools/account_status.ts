@@ -64,6 +64,7 @@ export default defineTool({
     const nextCuotas = plans.reduce((sum, plan) => sum + plan.nextAmount, 0);
     const laterCuotas = plans.reduce((sum, plan) => sum + plan.laterAmount, 0);
 
+    const statement = await loadStatementSummary(ctx.host.kv);
     const lastPayment = txs
       .filter(
         (tx) =>
@@ -115,11 +116,11 @@ export default defineTool({
         tarjetaFacturada: {
           from: accounts.statementFrom ? formatYmd(accounts.statementFrom) : null,
           to: accounts.statementTo ? formatYmd(accounts.statementTo) : null,
-          totalFormatted: formatClp(sumAmount(accounts.facturada)),
+          totalFormatted: formatClp(statement?.montoFacturado ?? sumAmount(accounts.facturada)),
           paidFromChecking: paid
             ? { date: paid.date, totalFormatted: formatClp(Math.abs(paid.amount)) }
             : null,
-          note: "El total es la suma de las cuotas (valor cuota) del estado de cuenta. El pago desde la cuenta es una confirmación aparte y puede incluir saldo anterior o intereses que no están en las líneas de compra.",
+          note: "El total es el monto total facturado a pagar que imprime el estado de cuenta. La suma de las cuotas es una parte de ese total.",
         },
         tarjetaNoFacturada: {
           conocido: false,
@@ -134,7 +135,7 @@ export default defineTool({
           totalFormatted: formatClp(nextCuotas + laterCuotas),
           entranEnElProximoEstadoFormatted: formatClp(nextCuotas),
           mesesSiguientesFormatted: formatClp(laterCuotas),
-          statement: await loadStatementSummary(ctx.host.kv),
+          statement,
         },
         cuotas: {
           nextStatementFormatted: formatClp(nextCuotas),
