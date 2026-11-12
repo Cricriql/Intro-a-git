@@ -59,7 +59,7 @@ Contenido:
   (el cargo por pago de la tarjeta en la cuenta) y tarjeta no facturada (avisos
   posteriores a ese estado). Las compras en cuotas muestran la cuota del próximo
   estado aparte de las que salen en los meses siguientes.
-- El histórico lee hasta **500** correos (`sync_gmail` con `fullHistory` y `limit: 500`).
+- El histórico lee al menos **500** correos y acepta hasta **2000** (`sync_gmail` con `fullHistory`).
 - **Gráfico de torta por mes** con el gasto real por categoría: excluye pagos de
   tarjeta, saldos y sueldos, y cuenta una sola vez la compra que aparece en el aviso y en el EECC Visa.
 - Totales por categoría y últimos cargos.

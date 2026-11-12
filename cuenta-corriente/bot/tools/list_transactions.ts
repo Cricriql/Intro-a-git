@@ -13,7 +13,7 @@ export default defineTool({
     category: z.string().optional().describe("Exact category filter, e.g. comida."),
     source: z.enum(["cartola", "visa", "compra_alerta", "unknown"]).optional(),
     merchantContains: z.string().optional().describe("Case-insensitive merchant substring."),
-    limit: z.number().int().min(1).max(200).optional().describe("Max rows to return (default 50)."),
+    limit: z.number().int().min(1).max(2000).optional().describe("Max rows to return (default 50, up to 2000)."),
   }),
   async execute(input, ctx) {
     const limit = input.limit ?? 50;

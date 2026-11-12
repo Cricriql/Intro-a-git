@@ -15,6 +15,8 @@ export default defineTool({
     Sync Banco de Chile emails from Gmail (purchase alerts, cartola, EECC).
     Parses bodies and PDF attachments, upserts transactions into durable memory,
     regenerates the HTML dashboard, and remembers message ids so repeats are skipped.
+    limit accepts up to 2000. fullHistory always reads at least 500 of the newest
+    matching mails, even if limit is lower.
   `,
   execution: "server",
   effect: "idempotent",
@@ -23,9 +25,9 @@ export default defineTool({
       .number()
       .int()
       .min(1)
-      .max(500)
+      .max(2000)
       .optional()
-      .describe("Máximo de correos (default 50, o 500 si fullHistory)."),
+      .describe("Cuántos correos leer (hasta 2000). Histórico: mínimo 500."),
     fullHistory: z
       .boolean()
       .optional()
@@ -44,10 +46,10 @@ export default defineTool({
 
     const sync = await loadGmailSync(ctx.host.kv);
     const sinceUid = input.fullHistory ? 0 : sync.lastUid;
-    const mails = await fetchBankMails(cfg, {
-      sinceUid,
-      limit: input.limit ?? (input.fullHistory ? 500 : 50),
-    });
+    const requested = input.limit ?? (input.fullHistory ? 500 : 50);
+    // A full scan must reach past the old 200 cap even if the caller still sends 200.
+    const limit = input.fullHistory ? Math.max(requested, 500) : requested;
+    const mails = await fetchBankMails(cfg, { sinceUid, limit });
 
     const seen = new Set(sync.seenMessageIds);
     let mailsProcessed = 0;
@@ -98,6 +100,7 @@ export default defineTool({
     return {
       ok: true,
       mailsFetched: mails.length,
+      limitApplied: limit,
       mailsProcessed,
       mailsSkipped,
       txsAdded,

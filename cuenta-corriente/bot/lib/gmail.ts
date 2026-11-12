@@ -81,12 +81,12 @@ export async function fetchBankMails(
       );
       void query;
       const uids: number[] = Array.isArray(uidsRaw) ? uidsRaw : [];
-      const list = uids
-        .filter((uid: number) => (opts.sinceUid ? uid > opts.sinceUid : true))
-        .sort((a: number, b: number) => a - b);
+      const sinceUid = opts.sinceUid ?? 0;
+      const list = uids.filter((uid: number) => uid > sinceUid).sort((a, b) => a - b);
       const limit = opts.limit ?? 100;
-      // Incremental polls take the oldest unseen first so the cursor never skips mail.
-      const slice = opts.sinceUid ? list.slice(0, limit) : list.slice(-limit);
+      // Continuing a cursor takes the oldest unseen first. A scan from zero
+      // takes the newest `limit` mails, so a higher limit reaches further back.
+      const slice = sinceUid > 0 ? list.slice(0, limit) : list.slice(-limit);
 
       for (const uid of slice) {
         const downloaded = await client.download(String(uid), undefined, { uid: true });

@@ -13,7 +13,8 @@ lo pida (“sincroniza”, “lee el correo”, “actualiza”).
 3. Si preguntan estado / “cómo voy” / “muéstrame el HTML” y piden datos al día:
    `sync_gmail` → `account_status` y/o `render_dashboard`.
    Si no piden sincronizar, responde con lo que ya está en memoria.
-4. Para el histórico usa `fullHistory: true` y `limit: 500` (el máximo).
+4. Para el histórico usa `fullHistory: true`. Eso lee al menos 500 correos
+   (puedes pedir hasta 2000 con `limit`). No digas que el máximo es 200.
 
 Secretos: `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `STATEMENT_PDF_PASSWORD`.
 
