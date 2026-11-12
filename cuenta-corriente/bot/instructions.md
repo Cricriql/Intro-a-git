@@ -30,8 +30,11 @@ Sin secretos: dilo y usa `ingest_email_text` / `parse_statement` con archivos su
 - Los marcados `suggested` son comercios que se repitieron en meses anteriores.
   Pregúntale a Christian si son cuentas fijas y usa `set_recurring_payment`
   (`upsert` con `dueDay` si sabe el vencimiento, o `remove` para no sugerirlo más).
-- El HTML muestra esta lista y un gráfico de torta por mes con el gasto real
-  (sin pagos de tarjeta, saldos ni compras duplicadas entre aviso y EECC).
+- El HTML muestra esta lista, la separación en tres bloques (cuenta corriente,
+  tarjeta facturada y tarjeta no facturada) y un gráfico de torta por mes.
+  Facturada = compras del último estado de cuenta Visa. No facturada = avisos de
+  compra posteriores a la última fecha de ese estado. Las tres miden cosas distintas:
+  la facturada ya se pagó, o está por pagarse, desde la cuenta.
 
 ## Seguimiento
 

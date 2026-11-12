@@ -1,14 +1,19 @@
 import { prompt } from "@grok/agent-sdk";
 import { defineTool } from "@grok/agent-sdk/tools";
 import * as z from "zod/v4";
+import { splitAccounts, sumAmount } from "../lib/accounts.js";
+import { formatYmd, monthLabel } from "../lib/dates.js";
 import { formatClp } from "../lib/money.js";
 import { loadGmailSync, loadMerchantRules, loadTransactions } from "../lib/store.js";
 
 export default defineTool({
   description: prompt`
     Estado de cuenta / gastos desde la memoria durable: totales por fuente,
-    categorías confirmadas vs propuestas, último sync Gmail, y gasto reciente.
-    Prefiere esto cuando el usuario pregunte "cómo voy", "estado", o "cuánto llevo".
+    categorías, último sync Gmail, y la separación entre cuenta corriente,
+    tarjeta facturada (último estado de cuenta Visa) y tarjeta no facturada
+    (avisos de compra posteriores a ese estado).
+    Prefiere esto cuando el usuario pregunte "cómo voy", "estado", "cuánto llevo"
+    o "qué tengo facturado".
   `,
   execution: "server",
   effect: "read",
@@ -50,6 +55,11 @@ export default defineTool({
       .filter((tx) => tx.amount < 0 && approxTime(tx.date) >= cutoff)
       .reduce((s, tx) => s + tx.amount, 0);
 
+    const accounts = splitAccounts(txs);
+    const corrienteMonths = [...new Set(accounts.corriente.map((tx) => tx.month))].sort();
+    const corrienteMonth = corrienteMonths.at(-1) ?? null;
+    const lastPayDate = accounts.cardPayments[0]?.date ?? null;
+
     const lastPayment = txs
       .filter(
         (tx) =>
@@ -89,6 +99,36 @@ export default defineTool({
         .sort((a, b) => a.total - b.total),
       recentSpendFormatted: formatClp(Math.abs(recentSpend)),
       recentDays,
+      accounts: {
+        corriente: {
+          month: corrienteMonth,
+          monthLabel: corrienteMonth ? monthLabel(corrienteMonth) : null,
+          totalFormatted: formatClp(
+            sumAmount(accounts.corriente.filter((tx) => tx.month === corrienteMonth)),
+          ),
+          note: "No incluye el pago de la tarjeta ni el sueldo. La cartola llega a fin de mes.",
+        },
+        tarjetaFacturada: {
+          from: accounts.statementFrom ? formatYmd(accounts.statementFrom) : null,
+          to: accounts.statementTo ? formatYmd(accounts.statementTo) : null,
+          count: accounts.facturada.length,
+          totalFormatted: formatClp(sumAmount(accounts.facturada)),
+          paidFromChecking: lastPayDate
+            ? {
+                date: lastPayDate,
+                totalFormatted: formatClp(
+                  sumAmount(accounts.cardPayments.filter((tx) => tx.date === lastPayDate)),
+                ),
+              }
+            : null,
+        },
+        tarjetaNoFacturada: {
+          count: accounts.noFacturada.length,
+          totalFormatted: formatClp(sumAmount(accounts.noFacturada)),
+          after: accounts.statementTo ? formatYmd(accounts.statementTo) : null,
+          note: "Avisos de compra posteriores al último estado de cuenta. Salen en el próximo.",
+        },
+      },
       lastPaymentHint: lastPayment
         ? {
             date: lastPayment.date,

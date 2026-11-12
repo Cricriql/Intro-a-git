@@ -79,6 +79,9 @@ Contenido:
 
 - **Pagos del mes**: pago de tarjeta de crédito + pagos recurrentes confirmados
   (`set_recurring_payment`) y sugeridos, con estado pagado / pendiente / atrasado.
+- **Tres bloques separados**: cuenta corriente (cartola), tarjeta facturada
+  (último estado de cuenta Visa) y tarjeta no facturada (avisos de compra posteriores
+  a ese estado). Una compra no se cuenta en dos bloques.
 - **Gráfico de torta por mes** con el gasto real por categoría: excluye pagos de
   tarjeta, saldos y sueldos, y cuenta una sola vez la compra que aparece en el aviso y en el EECC Visa.
 - Totales por categoría y últimos cargos.

@@ -37,6 +37,11 @@ export function parseTxDate(date: string, today: YMD = todayInSantiago()): YMD |
   return null;
 }
 
+export function formatYmd(d: YMD): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.day)}/${p(d.month)}/${d.year}`;
+}
+
 export function monthKey(d: Pick<YMD, "year" | "month">): string {
   return `${d.year}-${String(d.month).padStart(2, "0")}`;
 }

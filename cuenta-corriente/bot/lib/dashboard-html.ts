@@ -1,6 +1,7 @@
-import { monthKey, monthLabel, shiftMonth, todayInSantiago, type YMD } from "./dates.js";
+import { splitAccounts, sumAmount } from "./accounts.js";
+import { formatYmd, monthKey, monthLabel, todayInSantiago, type YMD } from "./dates.js";
 import { formatClp } from "./money.js";
-import { monthlyBreakdown, spendTransactions, type MonthBreakdown } from "./monthly.js";
+import { monthlyBreakdown, type DatedTx, type MonthBreakdown } from "./monthly.js";
 import { buildChecklist, type ChecklistItem, type RecurringPayment } from "./recurring.js";
 import type { GmailSyncState } from "./store.js";
 import type { StoredTransaction } from "./types.js";
@@ -69,7 +70,11 @@ function pieSvg(month: MonthBreakdown): string {
   return `<svg class="pie" viewBox="-1.05 -1.05 2.1 2.1" role="img" aria-label="Gasto por categoría ${escapeHtml(monthLabel(month.month))}">${slices.join("")}</svg>`;
 }
 
-function monthCard(month: MonthBreakdown, isCurrent: boolean): string {
+function monthCard(
+  month: MonthBreakdown,
+  isCurrent: boolean,
+  buckets: { corriente: number; facturada: number; noFacturada: number },
+): string {
   const legend = month.categories
     .map(
       (c) => `<li>
@@ -89,8 +94,52 @@ function monthCard(month: MonthBreakdown, isCurrent: boolean): string {
       ${pieSvg(month)}
       <ul class="legend">${legend}</ul>
     </div>
+    <div class="buckets">
+      <span><i class="corriente"></i>Cuenta ${escapeHtml(formatClp(buckets.corriente))}</span>
+      <span><i class="facturada"></i>Facturada ${escapeHtml(formatClp(buckets.facturada))}</span>
+      <span><i class="nofact"></i>No facturada ${escapeHtml(formatClp(buckets.noFacturada))}</span>
+    </div>
     <div class="meta">${month.count} cargos</div>
   </div>`;
+}
+
+function topCategories(list: DatedTx[], n = 4): string {
+  const map = new Map<string, number>();
+  for (const tx of list) {
+    map.set(tx.effectiveCategory, (map.get(tx.effectiveCategory) ?? 0) + Math.abs(tx.amount));
+  }
+  const ranked = [...map.entries()].sort((a, b) => b[1] - a[1]).slice(0, n);
+  if (!ranked.length) return "";
+  return `<ul class="legend">${ranked
+    .map(
+      ([category, total]) => `<li>
+        <span class="dot" style="background:${colorFor(category)}"></span>
+        <span class="lname">${escapeHtml(category)}</span>
+        <span class="lamt">${escapeHtml(formatClp(total))}</span>
+      </li>`,
+    )
+    .join("")}</ul>`;
+}
+
+function miniRows(list: DatedTx[]): string {
+  const rows = list
+    .slice(0, 5)
+    .map(
+      (tx) => `<tr>
+        <td>${escapeHtml(tx.date)}</td>
+        <td>${escapeHtml(tx.merchant || tx.description)}</td>
+        <td class="num">${escapeHtml(formatClp(tx.amount))}</td>
+      </tr>`,
+    )
+    .join("");
+  if (!rows) return `<p class="meta">Sin movimientos en este período.</p>`;
+  return `<table><tbody>${rows}</tbody></table>`;
+}
+
+function whereLabel(tx: DatedTx): string {
+  if (tx.source === "cartola") return "Cuenta corriente";
+  if (tx.source === "visa") return "Tarjeta facturada";
+  return "Tarjeta no facturada";
 }
 
 const STATUS_LABEL: Record<ChecklistItem["status"], string> = {
@@ -119,12 +168,43 @@ export function buildDashboardHtml(data: DashboardData): string {
   const txs = data.transactions;
   const today = data.today ?? todayInSantiago(new Date(data.generatedAt));
   const currentMonth = monthKey(today);
-  const previousMonth = shiftMonth(currentMonth, -1);
 
-  const spend = spendTransactions(txs, today);
+  const view = splitAccounts(txs, today);
+  const spend = [
+    ...view.corriente,
+    ...view.facturada,
+    ...view.facturadaOlder,
+    ...view.noFacturada,
+  ];
   const months = monthlyBreakdown(spend);
-  const totalFor = (key: string) => months.find((m) => m.month === key)?.total ?? 0;
   const shownMonths = months.slice(0, MONTHS_SHOWN);
+  const bucketsFor = (month: string) => {
+    const of = (list: DatedTx[]) => sumAmount(list.filter((tx) => tx.month === month));
+    return {
+      corriente: of(view.corriente),
+      facturada: of([...view.facturada, ...view.facturadaOlder]),
+      noFacturada: of(view.noFacturada),
+    };
+  };
+
+  const corrienteMonths = [...new Set(view.corriente.map((tx) => tx.month))].sort();
+  const corrienteMonth = corrienteMonths.includes(currentMonth)
+    ? currentMonth
+    : (corrienteMonths.at(-1) ?? currentMonth);
+  const corrienteShown = view.corriente.filter((tx) => tx.month === corrienteMonth);
+  const facturadaTotal = sumAmount(view.facturada);
+  const noFacturadaTotal = sumAmount(view.noFacturada);
+  const compareTotal = sumAmount(corrienteShown) + facturadaTotal + noFacturadaTotal;
+  const share = (n: number) => (compareTotal > 0 ? Math.max(0, (n / compareTotal) * 100) : 0);
+
+  const noFacturadaByMonth = [...new Set(view.noFacturada.map((tx) => tx.month))]
+    .sort()
+    .map((month) => `${monthLabel(month)} ${formatClp(sumAmount(view.noFacturada.filter((tx) => tx.month === month)))}`);
+
+  const lastPayDate = view.cardPayments[0]?.date;
+  const lastPayTotal = lastPayDate
+    ? sumAmount(view.cardPayments.filter((tx) => tx.date === lastPayDate))
+    : 0;
 
   const checklist = buildChecklist(txs, data.recurring, today, currentMonth);
   const pendingCount = checklist.items.filter((i) => i.status !== "pagado" && !i.suggested).length;
@@ -163,7 +243,7 @@ export function buildDashboardHtml(data: DashboardData): string {
       (t) => `<tr>
       <td>${escapeHtml(t.date)}${t.time ? " " + escapeHtml(t.time) : ""}</td>
       <td>${escapeHtml(t.merchant || t.description)}</td>
-      <td>${escapeHtml(t.source)}</td>
+      <td>${escapeHtml(whereLabel(t))}</td>
       <td>${escapeHtml(t.effectiveCategory)}</td>
       <td class="num">${escapeHtml(formatClp(t.amount))}</td>
     </tr>`,
@@ -295,6 +375,36 @@ export function buildDashboardHtml(data: DashboardData): string {
     .lpct { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 2.2rem; text-align: right; }
     .lamt { font-variant-numeric: tabular-nums; min-width: 5rem; text-align: right; }
     .stat .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; }
+    .splitbar { display: flex; height: 12px; margin: 0 0 0.75rem; background: var(--line); }
+    .splitbar span { display: block; height: 100%; }
+    .splitbar .corriente, .buckets .corriente { background: #0f5c4c; }
+    .splitbar .facturada, .buckets .facturada { background: #3d6fb0; }
+    .splitbar .nofact, .buckets .nofact { background: #c8553d; }
+    .accounts {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+    .account {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-top: 4px solid #0f5c4c;
+      padding: 0.9rem 1rem 0.4rem;
+      min-width: 0;
+    }
+    .account.facturada { border-top-color: #3d6fb0; }
+    .account.nofact { border-top-color: #c8553d; }
+    .account h2 { margin: 0; }
+    .account .adesc { margin: 0.25rem 0 0; }
+    .account .avalue { font-size: 1.55rem; font-weight: 600; margin: 0.45rem 0 0.1rem; font-variant-numeric: tabular-nums; }
+    .account.corriente .avalue { color: #0f5c4c; }
+    .account.facturada .avalue { color: #3d6fb0; }
+    .account.nofact .avalue { color: #c8553d; }
+    .account .aperiod { font-weight: 600; margin: 0 0 0.45rem; }
+    .account table { font-size: 0.82rem; margin-top: 0.4rem; }
+    .buckets { display: flex; flex-wrap: wrap; gap: 0.35rem 0.8rem; margin-top: 0.7rem; font-size: 0.78rem; color: var(--muted); }
+    .buckets i { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; margin-right: 0.3rem; }
     @media (max-width: 560px) {
       .wide-only { display: none; }
     }
@@ -314,9 +424,66 @@ export function buildDashboardHtml(data: DashboardData): string {
       · <span class="badge">auto-refresh 15 min</span>
     </p>
 
+    <div class="splitbar" role="img" aria-label="Proporción entre cuenta corriente, tarjeta facturada y tarjeta no facturada">
+      <span class="corriente" style="width:${share(sumAmount(corrienteShown)).toFixed(1)}%"></span>
+      <span class="facturada" style="width:${share(facturadaTotal).toFixed(1)}%"></span>
+      <span class="nofact" style="width:${share(noFacturadaTotal).toFixed(1)}%"></span>
+    </div>
+    <div class="accounts">
+      <article class="account corriente">
+        <h2>Cuenta corriente</h2>
+        <p class="adesc meta">Dinero que salió de la cuenta. No incluye el pago de la tarjeta ni el sueldo.</p>
+        <div class="avalue">${escapeHtml(formatClp(sumAmount(corrienteShown)))}</div>
+        <p class="aperiod">${escapeHtml(monthLabel(corrienteMonth).replace(/^./, (c) => c.toUpperCase()))}</p>
+        ${
+          corrienteMonth === currentMonth
+            ? ""
+            : `<p class="meta">${escapeHtml(monthLabel(currentMonth))}: la cartola de este mes todavía no llega.</p>`
+        }
+        ${topCategories(corrienteShown)}
+        ${miniRows(corrienteShown)}
+      </article>
+      <article class="account facturada">
+        <h2>Tarjeta facturada</h2>
+        <p class="adesc meta">Compras que ya aparecen en el estado de cuenta Visa.</p>
+        <div class="avalue">${escapeHtml(formatClp(facturadaTotal))}</div>
+        <p class="aperiod">${
+          view.statementFrom && view.statementTo
+            ? `${escapeHtml(formatYmd(view.statementFrom))} – ${escapeHtml(formatYmd(view.statementTo))}`
+            : "Sin estado de cuenta todavía"
+        }</p>
+        ${
+          lastPayDate
+            ? `<p class="meta">Pagada desde la cuenta: ${escapeHtml(formatClp(lastPayTotal))} el ${escapeHtml(lastPayDate)}.${
+                lastPayTotal > facturadaTotal
+                  ? " El pago incluye el saldo anterior del estado de cuenta."
+                  : ""
+              }</p>`
+            : `<p class="meta">Todavía no hay un pago de la tarjeta en la cartola.</p>`
+        }
+        ${topCategories(view.facturada)}
+        ${miniRows(view.facturada)}
+      </article>
+      <article class="account nofact">
+        <h2>Tarjeta no facturada</h2>
+        <p class="adesc meta">Compras con tarjeta posteriores al último estado de cuenta. Van a salir en el próximo.</p>
+        <div class="avalue">${escapeHtml(formatClp(noFacturadaTotal))}</div>
+        <p class="aperiod">${
+          view.statementTo
+            ? `${view.noFacturada.length} compras después del ${escapeHtml(formatYmd(view.statementTo))}`
+            : `${view.noFacturada.length} compras, sin estado de cuenta de referencia`
+        }</p>
+        ${
+          noFacturadaByMonth.length
+            ? `<p class="meta">${escapeHtml(noFacturadaByMonth.join(" · "))}</p>`
+            : ""
+        }
+        ${topCategories(view.noFacturada)}
+        ${miniRows(view.noFacturada)}
+      </article>
+    </div>
+
     <div class="grid">
-      <div class="stat"><div class="label">Gastado ${escapeHtml(monthLabel(currentMonth))}</div><div class="value">${escapeHtml(formatClp(totalFor(currentMonth)))}</div></div>
-      <div class="stat"><div class="label">Gastado ${escapeHtml(monthLabel(previousMonth))}</div><div class="value">${escapeHtml(formatClp(totalFor(previousMonth)))}</div></div>
       <div class="stat"><div class="label">Pagos pendientes</div><div class="value${pendingCount ? " warn" : ""}">${pendingCount}</div>${
         suggestedPending ? `<div class="hint">+${suggestedPending} sugeridos</div>` : ""
       }</div>
@@ -341,11 +508,11 @@ export function buildDashboardHtml(data: DashboardData): string {
       <h2>Gasto por mes y categoría</h2>
       ${
         shownMonths.length
-          ? `<div class="months">${shownMonths.map((m) => monthCard(m, m.month === currentMonth)).join("\n")}</div>`
+          ? `<div class="months">${shownMonths.map((m) => monthCard(m, m.month === currentMonth, bucketsFor(m.month))).join("\n")}</div>`
           : '<p class="meta">Sin gastos aún. Espera el sync o pregunta al agente.</p>'
       }
-      <p class="meta">Gasto real: no incluye pagos de tarjeta ni saldos, y una compra que aparece en el aviso y en el estado de cuenta Visa se cuenta una sola vez.
-        Comercios aprendidos: ${data.learnedMerchants}.</p>
+      <p class="meta">Cada mes separa lo que salió de la cuenta, lo que ya está en un estado de cuenta Visa y lo que solo llegó como aviso de compra.
+        Una compra no se cuenta dos veces. Comercios aprendidos: ${data.learnedMerchants}.</p>
     </section>
 
     <section>
@@ -361,7 +528,7 @@ export function buildDashboardHtml(data: DashboardData): string {
     <section>
       <h2>Últimos cargos</h2>
       <table>
-        <thead><tr><th>Fecha</th><th>Comercio</th><th>Fuente</th><th>Categoría</th><th class="num">Monto</th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Comercio</th><th>Dónde</th><th>Categoría</th><th class="num">Monto</th></tr></thead>
         <tbody>
           ${txRows || '<tr><td colspan="5">Sin cargos en memoria.</td></tr>'}
         </tbody>
