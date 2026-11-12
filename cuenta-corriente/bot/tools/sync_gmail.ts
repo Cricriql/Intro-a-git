@@ -19,7 +19,13 @@ export default defineTool({
   execution: "server",
   effect: "idempotent",
   inputSchema: z.object({
-    limit: z.number().int().min(1).max(200).optional().describe("Max emails to fetch (default 50)."),
+    limit: z
+      .number()
+      .int()
+      .min(1)
+      .max(500)
+      .optional()
+      .describe("Máximo de correos (default 50, o 500 si fullHistory)."),
     fullHistory: z
       .boolean()
       .optional()
@@ -40,7 +46,7 @@ export default defineTool({
     const sinceUid = input.fullHistory ? 0 : sync.lastUid;
     const mails = await fetchBankMails(cfg, {
       sinceUid,
-      limit: input.limit ?? 50,
+      limit: input.limit ?? (input.fullHistory ? 500 : 50),
     });
 
     const seen = new Set(sync.seenMessageIds);

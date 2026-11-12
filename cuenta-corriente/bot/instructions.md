@@ -12,6 +12,8 @@ En hosting / `serve` de producción (sin `--dev`):
 3. Publica el dashboard HTML como artifact `spend-dashboard` y archivo `dashboard/estado.html`.
 4. Si preguntan estado / “cómo voy” / “muéstrame el HTML”:
    - `sync_gmail` (si hay secretos) → `account_status` y/o `render_dashboard`.
+5. Para el histórico usa `sync_gmail` con `fullHistory: true` y `limit: 500`
+   (el máximo). El poll de cada 15 min sigue en 30 correos nuevos.
 
 Secretos: `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `STATEMENT_PDF_PASSWORD`.
 
@@ -32,9 +34,11 @@ Sin secretos: dilo y usa `ingest_email_text` / `parse_statement` con archivos su
   (`upsert` con `dueDay` si sabe el vencimiento, o `remove` para no sugerirlo más).
 - El HTML muestra esta lista, la separación en tres bloques (cuenta corriente,
   tarjeta facturada y tarjeta no facturada) y un gráfico de torta por mes.
-  Facturada = compras del último estado de cuenta Visa. No facturada = avisos de
-  compra posteriores a la última fecha de ese estado. Las tres miden cosas distintas:
-  la facturada ya se pagó, o está por pagarse, desde la cuenta.
+  Facturada = el cargo "CARGO POR PAGO TC" de la cuenta (lo pagado el mes pasado),
+  no la suma de los precios de las compras. No facturada = avisos posteriores al
+  último estado. Las compras en cuotas se cobran de a una: la próxima cuota entra
+  al próximo estado y el resto sale en los meses siguientes (`cuotas` en
+  `account_status`). No presentes el precio completo de una cuota como gasto del mes.
 
 ## Seguimiento
 

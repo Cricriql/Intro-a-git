@@ -2,6 +2,7 @@ import { prompt } from "@grok/agent-sdk";
 import { defineTool } from "@grok/agent-sdk/tools";
 import * as z from "zod/v4";
 import { splitAccounts, sumAmount } from "../lib/accounts.js";
+import { openInstallments } from "../lib/installments.js";
 import { formatYmd, monthLabel } from "../lib/dates.js";
 import { formatClp } from "../lib/money.js";
 import { loadGmailSync, loadMerchantRules, loadTransactions } from "../lib/store.js";
@@ -58,7 +59,10 @@ export default defineTool({
     const accounts = splitAccounts(txs);
     const corrienteMonths = [...new Set(accounts.corriente.map((tx) => tx.month))].sort();
     const corrienteMonth = corrienteMonths.at(-1) ?? null;
-    const lastPayDate = accounts.cardPayments[0]?.date ?? null;
+    const paid = accounts.cardPayments.find((tx) => /CARGO POR PAGO TC/i.test(tx.description));
+    const plans = openInstallments(txs);
+    const nextCuotas = plans.reduce((sum, plan) => sum + plan.nextAmount, 0);
+    const laterCuotas = plans.reduce((sum, plan) => sum + plan.laterAmount, 0);
 
     const lastPayment = txs
       .filter(
@@ -111,22 +115,27 @@ export default defineTool({
         tarjetaFacturada: {
           from: accounts.statementFrom ? formatYmd(accounts.statementFrom) : null,
           to: accounts.statementTo ? formatYmd(accounts.statementTo) : null,
-          count: accounts.facturada.length,
-          totalFormatted: formatClp(sumAmount(accounts.facturada)),
-          paidFromChecking: lastPayDate
-            ? {
-                date: lastPayDate,
-                totalFormatted: formatClp(
-                  sumAmount(accounts.cardPayments.filter((tx) => tx.date === lastPayDate)),
-                ),
-              }
+          paidFromChecking: paid
+            ? { date: paid.date, totalFormatted: formatClp(Math.abs(paid.amount)) }
             : null,
+          note: "El monto facturado es el cargo por pago de la tarjeta en la cuenta corriente, no la suma de los precios de las compras en cuotas.",
         },
         tarjetaNoFacturada: {
           count: accounts.noFacturada.length,
           totalFormatted: formatClp(sumAmount(accounts.noFacturada)),
           after: accounts.statementTo ? formatYmd(accounts.statementTo) : null,
           note: "Avisos de compra posteriores al último estado de cuenta. Salen en el próximo.",
+        },
+        cuotas: {
+          nextStatementFormatted: formatClp(nextCuotas),
+          laterMonthsFormatted: formatClp(laterCuotas),
+          plans: plans.map((plan) => ({
+            name: plan.name,
+            progress: `${plan.current} de ${plan.total}`,
+            cuotaFormatted: formatClp(plan.cuota),
+            nextFormatted: formatClp(plan.nextAmount),
+            laterFormatted: formatClp(plan.laterAmount),
+          })),
         },
       },
       lastPaymentHint: lastPayment

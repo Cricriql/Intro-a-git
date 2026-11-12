@@ -1,4 +1,5 @@
 import { splitAccounts, sumAmount } from "./accounts.js";
+import { openInstallments } from "./installments.js";
 import { formatYmd, monthKey, monthLabel, todayInSantiago, type YMD } from "./dates.js";
 import { formatClp } from "./money.js";
 import { monthlyBreakdown, type DatedTx, type MonthBreakdown } from "./monthly.js";
@@ -193,18 +194,23 @@ export function buildDashboardHtml(data: DashboardData): string {
     : (corrienteMonths.at(-1) ?? currentMonth);
   const corrienteShown = view.corriente.filter((tx) => tx.month === corrienteMonth);
   const facturadaTotal = sumAmount(view.facturada);
+  const paid = view.cardPayments.find((tx) => /CARGO POR PAGO TC/i.test(tx.description));
+  const extraPay = paid
+    ? view.cardPayments.find(
+        (tx) => tx.date === paid.date && /PAGO TARJETA DE CREDITO/i.test(tx.description),
+      )
+    : undefined;
+  const facturadaHeadline = paid ? Math.abs(paid.amount) : facturadaTotal;
+  const plans = openInstallments(txs);
+  const nextCuotas = plans.reduce((sum, plan) => sum + plan.nextAmount, 0);
+  const laterCuotas = plans.reduce((sum, plan) => sum + plan.laterAmount, 0);
   const noFacturadaTotal = sumAmount(view.noFacturada);
-  const compareTotal = sumAmount(corrienteShown) + facturadaTotal + noFacturadaTotal;
+  const compareTotal = sumAmount(corrienteShown) + facturadaHeadline + noFacturadaTotal;
   const share = (n: number) => (compareTotal > 0 ? Math.max(0, (n / compareTotal) * 100) : 0);
 
   const noFacturadaByMonth = [...new Set(view.noFacturada.map((tx) => tx.month))]
     .sort()
     .map((month) => `${monthLabel(month)} ${formatClp(sumAmount(view.noFacturada.filter((tx) => tx.month === month)))}`);
-
-  const lastPayDate = view.cardPayments[0]?.date;
-  const lastPayTotal = lastPayDate
-    ? sumAmount(view.cardPayments.filter((tx) => tx.date === lastPayDate))
-    : 0;
 
   const checklist = buildChecklist(txs, data.recurring, today, currentMonth);
   const pendingCount = checklist.items.filter((i) => i.status !== "pagado" && !i.suggested).length;
@@ -426,7 +432,7 @@ export function buildDashboardHtml(data: DashboardData): string {
 
     <div class="splitbar" role="img" aria-label="Proporción entre cuenta corriente, tarjeta facturada y tarjeta no facturada">
       <span class="corriente" style="width:${share(sumAmount(corrienteShown)).toFixed(1)}%"></span>
-      <span class="facturada" style="width:${share(facturadaTotal).toFixed(1)}%"></span>
+      <span class="facturada" style="width:${share(facturadaHeadline).toFixed(1)}%"></span>
       <span class="nofact" style="width:${share(noFacturadaTotal).toFixed(1)}%"></span>
     </div>
     <div class="accounts">
@@ -445,24 +451,15 @@ export function buildDashboardHtml(data: DashboardData): string {
       </article>
       <article class="account facturada">
         <h2>Tarjeta facturada</h2>
-        <p class="adesc meta">Compras que ya aparecen en el estado de cuenta Visa.</p>
-        <div class="avalue">${escapeHtml(formatClp(facturadaTotal))}</div>
-        <p class="aperiod">${
-          view.statementFrom && view.statementTo
-            ? `${escapeHtml(formatYmd(view.statementFrom))} – ${escapeHtml(formatYmd(view.statementTo))}`
-            : "Sin estado de cuenta todavía"
-        }</p>
+        <p class="adesc meta">Lo que pagaste el mes pasado desde la cuenta (cargo por pago de la tarjeta).</p>
+        <div class="avalue">${escapeHtml(formatClp(facturadaHeadline))}</div>
+        <p class="aperiod">${paid ? `Pagado el ${escapeHtml(paid.date)}` : "Sin pago en la cartola"}</p>
         ${
-          lastPayDate
-            ? `<p class="meta">Pagada desde la cuenta: ${escapeHtml(formatClp(lastPayTotal))} el ${escapeHtml(lastPayDate)}.${
-                lastPayTotal > facturadaTotal
-                  ? " El pago incluye el saldo anterior del estado de cuenta."
-                  : ""
-              }</p>`
-            : `<p class="meta">Todavía no hay un pago de la tarjeta en la cartola.</p>`
+          extraPay
+            ? `<p class="meta">El mismo día hubo otro abono a la tarjeta, de ${escapeHtml(formatClp(Math.abs(extraPay.amount)))}.</p>`
+            : ""
         }
-        ${topCategories(view.facturada)}
-        ${miniRows(view.facturada)}
+        <p class="meta">Las compras en cuotas entran aquí solo por la cuota del mes, no por el precio completo.</p>
       </article>
       <article class="account nofact">
         <h2>Tarjeta no facturada</h2>
@@ -482,6 +479,34 @@ export function buildDashboardHtml(data: DashboardData): string {
         ${miniRows(view.noFacturada)}
       </article>
     </div>
+
+    <section>
+      <h2>Cuotas que salen después</h2>
+      <p class="meta">El total que muestra el banco mezcla las compras nuevas con las cuotas que todavía no se cobran. La cuota del próximo estado es de este mes; el resto sale en los meses siguientes.</p>
+      ${
+        plans.length
+          ? `<table>
+        <thead><tr><th>Compra</th><th>Va en</th><th class="num">Cuota</th><th class="num">Próximo estado</th><th class="num">Meses siguientes</th></tr></thead>
+        <tbody>
+          ${plans
+            .map(
+              (plan) => `<tr>
+            <td>${escapeHtml(plan.name)}</td>
+            <td>${plan.current} de ${plan.total}</td>
+            <td class="num">${escapeHtml(formatClp(plan.cuota))}</td>
+            <td class="num">${escapeHtml(formatClp(plan.nextAmount))}</td>
+            <td class="num">${plan.laterAmount ? `${escapeHtml(formatClp(plan.laterAmount))} <span class="meta">${plan.remaining - 1} cuotas</span>` : "—"}</td>
+          </tr>`,
+            )
+            .join("\n")}
+        </tbody>
+      </table>
+      <p class="meta">Próximo estado: compras nuevas ${escapeHtml(formatClp(noFacturadaTotal))} + cuotas ${escapeHtml(formatClp(nextCuotas))} = ${escapeHtml(formatClp(noFacturadaTotal + nextCuotas))}.
+        Cuotas de los meses siguientes: ${escapeHtml(formatClp(laterCuotas))}.
+        Compras nuevas más todas las cuotas pendientes: ${escapeHtml(formatClp(noFacturadaTotal + nextCuotas + laterCuotas))}.</p>`
+          : `<p class="meta">No hay compras en cuotas en los estados de cuenta leídos.</p>`
+      }
+    </section>
 
     <div class="grid">
       <div class="stat"><div class="label">Pagos pendientes</div><div class="value${pendingCount ? " warn" : ""}">${pendingCount}</div>${

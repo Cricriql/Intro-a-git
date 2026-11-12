@@ -1,4 +1,5 @@
 import { dayNumber, monthKey, parseTxDate, todayInSantiago, type YMD } from "./dates.js";
+import { billedAmount } from "./installments.js";
 import type { StoredTransaction } from "./types.js";
 
 const CARD_PAYMENT_RE = /MONTO CANCELADO|CARGO POR PAGO TC|PAGO TARJETA DE CREDITO|PAGO\s+TC\b/i;
@@ -49,16 +50,18 @@ export function spendTransactions(
     alertsByAmount.set(tx.amount, list);
   }
 
-  return dated.filter((tx) => {
-    if (tx.source !== "visa") return true;
-    const days = alertsByAmount.get(tx.amount);
-    if (!days) return true;
-    const day = dayNumber(tx.ymd);
-    const hit = days.findIndex((d) => Math.abs(d - day) <= 3);
-    if (hit === -1) return true;
-    days.splice(hit, 1);
-    return false;
-  });
+  return dated
+    .filter((tx) => {
+      if (tx.source !== "visa") return true;
+      const days = alertsByAmount.get(tx.amount);
+      if (!days) return true;
+      const day = dayNumber(tx.ymd);
+      const hit = days.findIndex((d) => Math.abs(d - day) <= 3);
+      if (hit === -1) return true;
+      days.splice(hit, 1);
+      return false;
+    })
+    .map((tx) => ({ ...tx, amount: billedAmount(tx) }));
 }
 
 export type MonthBreakdown = {

@@ -1,4 +1,5 @@
 import { dayNumber, monthKey, parseTxDate, todayInSantiago, type YMD } from "./dates.js";
+import { billedAmount } from "./installments.js";
 import { isCardPayment, type DatedTx } from "./monthly.js";
 import type { StoredTransaction } from "./types.js";
 
@@ -72,7 +73,9 @@ export function splitAccounts(
   const corriente = dated
     .filter((tx) => tx.source === "cartola" && !isCardPayment(tx))
     .sort(byDateDesc);
-  const visa = dated.filter((tx) => tx.source === "visa" && !isCardPayment(tx));
+  const visa = dated
+    .filter((tx) => tx.source === "visa" && !isCardPayment(tx))
+    .map((tx) => ({ ...tx, amount: billedAmount(tx) }));
   const statement = latestStatement(visa);
   const facturada = [...statement.items].sort(byDateDesc);
   const facturadaOlder = visa
