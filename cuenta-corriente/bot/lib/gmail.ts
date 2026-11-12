@@ -66,25 +66,30 @@ export async function fetchBankMails(
     const lock = await client.getMailboxLock("INBOX");
     try {
       const query = opts.query ?? bankSearchQuery();
-      // imapflow search accepts Gmail-raw via complex queries; use OR uid range + from
-      const uidsRaw = await client.search({
-        or: [
-          { from: "bancochile.cl" },
-          { from: "enviodigital@bancochile.cl" },
-          { subject: "Compra con Tarjeta" },
-          { subject: "Cartola Cuenta Corriente" },
-          { subject: "Estado de Cuenta Tarjeta" },
-        ],
-      });
+      // UIDs (not sequence numbers) so the lastUid cursor stays stable across polls.
+      const uidsRaw = await client.search(
+        {
+          or: [
+            { from: "bancochile.cl" },
+            { from: "enviodigital@bancochile.cl" },
+            { subject: "Compra con Tarjeta" },
+            { subject: "Cartola Cuenta Corriente" },
+            { subject: "Estado de Cuenta Tarjeta" },
+          ],
+        },
+        { uid: true },
+      );
       void query;
       const uids: number[] = Array.isArray(uidsRaw) ? uidsRaw : [];
       const list = uids
         .filter((uid: number) => (opts.sinceUid ? uid > opts.sinceUid : true))
         .sort((a: number, b: number) => a - b);
-      const slice = list.slice(-(opts.limit ?? 100));
+      const limit = opts.limit ?? 100;
+      // Incremental polls take the oldest unseen first so the cursor never skips mail.
+      const slice = opts.sinceUid ? list.slice(0, limit) : list.slice(-limit);
 
       for (const uid of slice) {
-        const downloaded = await client.download(uid);
+        const downloaded = await client.download(String(uid), undefined, { uid: true });
         if (!downloaded?.content) continue;
         const parsed = await simpleParser(downloaded.content);
         const from = parsed.from?.text ?? "";

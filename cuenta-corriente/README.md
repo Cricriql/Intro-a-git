@@ -62,7 +62,7 @@ curl -X POST http://127.0.0.1:3000/cuenta-corriente/v1/dev/schedules/gmail-poll
 | `GMAIL_APP_PASSWORD` | Contraseña de aplicación Google (2FA) |
 | `STATEMENT_PDF_PASSWORD` | Clave PDF cartola/EECC |
 
-También: `pip install pypdf` en el entorno del agente.
+También: `pip install -r requirements.txt` en el entorno del agente (los PDF del banco usan cifrado AES, que requiere `pypdf[crypto]`).
 
 ## Ver el HTML
 
