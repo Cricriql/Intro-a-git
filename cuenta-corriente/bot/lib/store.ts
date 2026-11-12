@@ -1,4 +1,8 @@
 import type { Category } from "./categories.js";
+import {
+  preferSummary,
+  type StatementSummary,
+} from "./statement-summary.js";
 import { isCategory, normalizeMerchant } from "./categories.js";
 import type {
   ParsedTransaction,
@@ -11,6 +15,7 @@ const TXS_KEY = "txs";
 const RULES_KEY = "merchant_rules";
 const PREF_KEY = "tracking_preference";
 const GMAIL_SYNC_KEY = "gmail_sync";
+const STATEMENT_SUMMARY_KEY = "statement_summary";
 
 export type GmailSyncState = {
   seenMessageIds: string[];
@@ -98,6 +103,33 @@ export async function loadGmailSync(kv: Kv): Promise<GmailSyncState> {
     };
   }
   return { seenMessageIds: [], lastUid: 0, lastSyncAt: null };
+}
+
+export async function loadStatementSummary(kv: Kv): Promise<StatementSummary | null> {
+  const raw = await kv.get(STATEMENT_SUMMARY_KEY);
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const obj = raw as Partial<StatementSummary>;
+  const num = (value: unknown) => (typeof value === "number" ? value : null);
+  const str = (value: unknown) => (typeof value === "string" ? value : null);
+  return {
+    periodFrom: str(obj.periodFrom),
+    periodTo: str(obj.periodTo),
+    montoFacturado: num(obj.montoFacturado),
+    cupoUtilizado: num(obj.cupoUtilizado),
+    cupoTotal: num(obj.cupoTotal),
+    cupoDisponible: num(obj.cupoDisponible),
+    saldoCuotas: num(obj.saldoCuotas),
+  };
+}
+
+export async function rememberStatementSummary(
+  kv: Kv,
+  incoming: StatementSummary | null,
+): Promise<StatementSummary | null> {
+  const current = await loadStatementSummary(kv);
+  const next = preferSummary(current, incoming);
+  if (next) await kv.put(STATEMENT_SUMMARY_KEY, next as unknown as JsonValue);
+  return next;
 }
 
 export async function saveGmailSync(kv: Kv, state: GmailSyncState): Promise<void> {

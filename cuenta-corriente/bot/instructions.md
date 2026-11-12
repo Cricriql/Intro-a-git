@@ -35,11 +35,12 @@ Sin secretos: dilo y usa `ingest_email_text` / `parse_statement` con archivos su
   (`upsert` con `dueDay` si sabe el vencimiento, o `remove` para no sugerirlo más).
 - El HTML muestra esta lista, la separación en tres bloques (cuenta corriente,
   tarjeta facturada y tarjeta no facturada) y un gráfico de torta por mes.
-  Facturada = el cargo "CARGO POR PAGO TC" de la cuenta (lo pagado el mes pasado),
-  no la suma de los precios de las compras. No facturada = avisos posteriores al
-  último estado. Las compras en cuotas se cobran de a una: la próxima cuota entra
-  al próximo estado y el resto sale en los meses siguientes (`cuotas` en
-  `account_status`). No presentes el precio completo de una cuota como gasto del mes.
+  Facturada = el cargo "CARGO POR PAGO TC" de la cuenta (lo pagado el mes pasado).
+  El monto aún no facturado no se conoce hasta el próximo estado: los avisos traen
+  el precio de la compra, y el cupo utilizado incluye cuotas de meses posteriores.
+  Separa siempre `cuotasEnUtilizado` (lo que entra en el próximo estado vs lo que
+  sigue para después) de `comprasAvisadas` (precio, no cuota). Si el estado trae
+  cupo utilizado o saldo en cuotas, usa esos montos del banco.
 
 ## Seguimiento
 

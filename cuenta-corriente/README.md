@@ -55,10 +55,9 @@ Contenido:
 
 - **Pagos del mes**: pago de tarjeta de crédito + pagos recurrentes confirmados
   (`set_recurring_payment`) y sugeridos, con estado pagado / pendiente / atrasado.
-- **Tres bloques separados**: cuenta corriente (cartola), tarjeta facturada
-  (el cargo por pago de la tarjeta en la cuenta) y tarjeta no facturada (avisos
-  posteriores a ese estado). Las compras en cuotas muestran la cuota del próximo
-  estado aparte de las que salen en los meses siguientes.
+- **Tres bloques**: cuenta corriente, tarjeta ya pagada, y cuotas que siguen en el cupo utilizado.
+  El precio de las compras avisadas no se presenta como monto a facturar: si la compra fue en cuotas, esa parte se conoce cuando llega el estado.
+  Del estado se leen cupo utilizado, monto facturado y saldo en cuotas.
 - El histórico lee al menos **500** correos y acepta hasta **2000** (`sync_gmail` con `fullHistory`).
 - **Gráfico de torta por mes** con el gasto real por categoría: excluye pagos de
   tarjeta, saldos y sueldos, y cuenta una sola vez la compra que aparece en el aviso y en el EECC Visa.

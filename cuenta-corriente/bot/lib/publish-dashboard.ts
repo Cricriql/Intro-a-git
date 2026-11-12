@@ -4,6 +4,7 @@ import { loadRecurringPayments } from "./recurring.js";
 import {
   loadGmailSync,
   loadMerchantRules,
+  loadStatementSummary,
   loadTransactions,
   type Kv,
 } from "./store.js";
@@ -34,6 +35,7 @@ export async function publishDashboard(deps: {
     transactions,
     learnedMerchants: Object.keys(rules).length,
     recurring,
+    statementSummary: await loadStatementSummary(deps.kv),
   });
 
   await deps.files.write(DASHBOARD_PATH, html, { scope: "deployment" });

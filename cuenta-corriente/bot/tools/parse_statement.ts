@@ -2,7 +2,8 @@ import { prompt } from "@grok/agent-sdk";
 import { defineTool } from "@grok/agent-sdk/tools";
 import * as z from "zod/v4";
 import { parseStatementText } from "../lib/parse-statement.js";
-import { mergeParsedTransactions } from "../lib/store.js";
+import { parseStatementSummary } from "../lib/statement-summary.js";
+import { mergeParsedTransactions, rememberStatementSummary } from "../lib/store.js";
 import type { StatementSource } from "../lib/types.js";
 
 export default defineTool({
@@ -24,11 +25,13 @@ export default defineTool({
   }),
   async execute({ text, sourceHint, label }, ctx) {
     const parsed = parseStatementText(text, sourceHint as StatementSource | undefined);
+    const summary = await rememberStatementSummary(ctx.host.kv, parseStatementSummary(text));
     const merge = await mergeParsedTransactions(ctx.host.kv, parsed.transactions);
 
     return {
       label: label ?? null,
       source: parsed.source,
+      statementSummary: summary,
       lineCount: parsed.lineCount,
       parsed: parsed.transactions.length,
       added: merge.added,

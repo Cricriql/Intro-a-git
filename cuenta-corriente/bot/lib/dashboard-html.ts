@@ -1,5 +1,6 @@
 import { splitAccounts, sumAmount } from "./accounts.js";
 import { openInstallments } from "./installments.js";
+import type { StatementSummary } from "./statement-summary.js";
 import { formatYmd, monthKey, monthLabel, todayInSantiago, type YMD } from "./dates.js";
 import { formatClp } from "./money.js";
 import { monthlyBreakdown, type DatedTx, type MonthBreakdown } from "./monthly.js";
@@ -14,6 +15,7 @@ export type DashboardData = {
   transactions: StoredTransaction[];
   learnedMerchants: number;
   recurring: RecurringPayment[];
+  statementSummary?: StatementSummary | null;
   today?: YMD;
 };
 
@@ -137,6 +139,23 @@ function miniRows(list: DatedTx[]): string {
   return `<table><tbody>${rows}</tbody></table>`;
 }
 
+function bankSummaryLine(summary: StatementSummary | null, cuotasLeidas: number): string {
+  if (!summary) return "";
+  const bits: string[] = [];
+  if (summary.periodTo) bits.push(`estado al ${summary.periodTo}`);
+  if (summary.cupoUtilizado !== null) bits.push(`cupo utilizado ${formatClp(summary.cupoUtilizado)}`);
+  if (summary.montoFacturado !== null) bits.push(`monto facturado ${formatClp(summary.montoFacturado)}`);
+  if (summary.saldoCuotas !== null) {
+    bits.push(`saldo en cuotas ${formatClp(summary.saldoCuotas)}`);
+  }
+  if (!bits.length) return "";
+  const compared =
+    summary.saldoCuotas !== null && summary.saldoCuotas !== cuotasLeidas
+      ? ` Con las compras leídas, las cuotas que faltan suman ${formatClp(cuotasLeidas)}.`
+      : "";
+  return `<p class="meta">El banco informa: ${escapeHtml(bits.join(" · "))}.${escapeHtml(compared)}</p>`;
+}
+
 function whereLabel(tx: DatedTx): string {
   if (tx.source === "cartola") return "Cuenta corriente";
   if (tx.source === "visa") return "Tarjeta facturada";
@@ -205,7 +224,8 @@ export function buildDashboardHtml(data: DashboardData): string {
   const nextCuotas = plans.reduce((sum, plan) => sum + plan.nextAmount, 0);
   const laterCuotas = plans.reduce((sum, plan) => sum + plan.laterAmount, 0);
   const noFacturadaTotal = sumAmount(view.noFacturada);
-  const compareTotal = sumAmount(corrienteShown) + facturadaHeadline + noFacturadaTotal;
+  const cuotasEnUtilizado = nextCuotas + laterCuotas;
+  const compareTotal = sumAmount(corrienteShown) + facturadaHeadline + cuotasEnUtilizado;
   const share = (n: number) => (compareTotal > 0 ? Math.max(0, (n / compareTotal) * 100) : 0);
 
   const noFacturadaByMonth = [...new Set(view.noFacturada.map((tx) => tx.month))]
@@ -428,10 +448,10 @@ export function buildDashboardHtml(data: DashboardData): string {
       · Mails vistos: ${data.sync.seenMessageIds.length}
     </p>
 
-    <div class="splitbar" role="img" aria-label="Proporción entre cuenta corriente, tarjeta facturada y tarjeta no facturada">
+    <div class="splitbar" role="img" aria-label="Proporción entre cuenta corriente, lo ya pagado de la tarjeta y las cuotas que siguen en el cupo utilizado">
       <span class="corriente" style="width:${share(sumAmount(corrienteShown)).toFixed(1)}%"></span>
       <span class="facturada" style="width:${share(facturadaHeadline).toFixed(1)}%"></span>
-      <span class="nofact" style="width:${share(noFacturadaTotal).toFixed(1)}%"></span>
+      <span class="nofact" style="width:${share(cuotasEnUtilizado).toFixed(1)}%"></span>
     </div>
     <div class="accounts">
       <article class="account corriente">
@@ -460,27 +480,21 @@ export function buildDashboardHtml(data: DashboardData): string {
         <p class="meta">Las compras en cuotas entran aquí solo por la cuota del mes, no por el precio completo.</p>
       </article>
       <article class="account nofact">
-        <h2>Tarjeta no facturada</h2>
-        <p class="adesc meta">Compras con tarjeta posteriores al último estado de cuenta. Van a salir en el próximo.</p>
-        <div class="avalue">${escapeHtml(formatClp(noFacturadaTotal))}</div>
-        <p class="aperiod">${
-          view.statementTo
-            ? `${view.noFacturada.length} compras después del ${escapeHtml(formatYmd(view.statementTo))}`
-            : `${view.noFacturada.length} compras, sin estado de cuenta de referencia`
-        }</p>
-        ${
-          noFacturadaByMonth.length
-            ? `<p class="meta">${escapeHtml(noFacturadaByMonth.join(" · "))}</p>`
-            : ""
-        }
-        ${topCategories(view.noFacturada)}
-        ${miniRows(view.noFacturada)}
+        <h2>Cuotas en el utilizado</h2>
+        <p class="adesc meta">Ya están comprometidas y el cupo utilizado las incluye. No se facturan todas en el próximo estado.</p>
+        <div class="avalue">${escapeHtml(formatClp(cuotasEnUtilizado))}</div>
+        <p class="aperiod">${escapeHtml(formatClp(nextCuotas))} entran la próxima vez</p>
+        <p class="meta">${escapeHtml(formatClp(laterCuotas))} siguen para los meses siguientes.</p>
+        <p class="meta">Compras avisadas desde el cierre: ${escapeHtml(formatClp(noFacturadaTotal))}${
+          view.statementTo ? ` después del ${escapeHtml(formatYmd(view.statementTo))}` : ""
+        }. Es el precio de la compra. Si alguna fue en cuotas, la parte que se factura se conoce cuando llegue el estado.</p>
       </article>
     </div>
 
     <section>
-      <h2>Cuotas que salen después</h2>
-      <p class="meta">El total que muestra el banco mezcla las compras nuevas con las cuotas que todavía no se cobran. La cuota del próximo estado es de este mes; el resto sale en los meses siguientes.</p>
+      <h2>Cuotas dentro del utilizado</h2>
+      <p class="meta">El cupo utilizado junta lo que se va a facturar ahora con cuotas de meses posteriores. Aquí están separadas. El monto de las compras nuevas no se suma: todavía no está facturado.</p>
+      ${bankSummaryLine(data.statementSummary ?? null, cuotasEnUtilizado)}
       ${
         plans.length
           ? `<table>
@@ -499,9 +513,8 @@ export function buildDashboardHtml(data: DashboardData): string {
             .join("\n")}
         </tbody>
       </table>
-      <p class="meta">Próximo estado: compras nuevas ${escapeHtml(formatClp(noFacturadaTotal))} + cuotas ${escapeHtml(formatClp(nextCuotas))} = ${escapeHtml(formatClp(noFacturadaTotal + nextCuotas))}.
-        Cuotas de los meses siguientes: ${escapeHtml(formatClp(laterCuotas))}.
-        Compras nuevas más todas las cuotas pendientes: ${escapeHtml(formatClp(noFacturadaTotal + nextCuotas + laterCuotas))}.</p>`
+      <p class="meta">En el próximo estado entra la cuota de ${escapeHtml(formatClp(nextCuotas))}. ${escapeHtml(formatClp(laterCuotas))} queda en el utilizado para los meses siguientes.
+        Las compras avisadas (${escapeHtml(formatClp(noFacturadaTotal))}${noFacturadaByMonth.length ? `, ${escapeHtml(noFacturadaByMonth.join(" · "))}` : ""}) se parten en cuota y saldo cuando el banco las facture.</p>`
           : `<p class="meta">No hay compras en cuotas en los estados de cuenta leídos.</p>`
       }
     </section>

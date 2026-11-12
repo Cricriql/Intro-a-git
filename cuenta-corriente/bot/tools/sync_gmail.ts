@@ -4,9 +4,11 @@ import * as z from "zod/v4";
 import { fetchBankMails, readGmailConfig } from "../lib/gmail.js";
 import { parseStatementText } from "../lib/parse-statement.js";
 import { publishDashboard } from "../lib/publish-dashboard.js";
+import { parseStatementSummary } from "../lib/statement-summary.js";
 import {
   loadGmailSync,
   mergeParsedTransactions,
+  rememberStatementSummary,
   saveGmailSync,
 } from "../lib/store.js";
 
@@ -61,12 +63,15 @@ export default defineTool({
 
     for (const mail of mails) {
       maxUid = Math.max(maxUid, mail.uid);
+      const blobs = [mail.text, ...mail.attachmentTexts.map((a) => a.text)].filter(Boolean);
+      for (const blob of blobs) {
+        await rememberStatementSummary(ctx.host.kv, parseStatementSummary(blob));
+      }
       if (seen.has(mail.messageId)) {
         mailsSkipped += 1;
         continue;
       }
 
-      const blobs = [mail.text, ...mail.attachmentTexts.map((a) => a.text)].filter(Boolean);
       let addedHere = 0;
       let source = "unknown";
       for (const blob of blobs) {

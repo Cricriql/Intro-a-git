@@ -5,7 +5,7 @@ import { splitAccounts, sumAmount } from "../lib/accounts.js";
 import { openInstallments } from "../lib/installments.js";
 import { formatYmd, monthLabel } from "../lib/dates.js";
 import { formatClp } from "../lib/money.js";
-import { loadGmailSync, loadMerchantRules, loadTransactions } from "../lib/store.js";
+import { loadGmailSync, loadMerchantRules, loadStatementSummary, loadTransactions } from "../lib/store.js";
 
 export default defineTool({
   description: prompt`
@@ -121,10 +121,19 @@ export default defineTool({
           note: "El monto facturado es el cargo por pago de la tarjeta en la cuenta corriente, no la suma de los precios de las compras en cuotas.",
         },
         tarjetaNoFacturada: {
-          count: accounts.noFacturada.length,
-          totalFormatted: formatClp(sumAmount(accounts.noFacturada)),
-          after: accounts.statementTo ? formatYmd(accounts.statementTo) : null,
-          note: "Avisos de compra posteriores al último estado de cuenta. Salen en el próximo.",
+          conocido: false,
+          comprasAvisadas: {
+            count: accounts.noFacturada.length,
+            precioFormatted: formatClp(sumAmount(accounts.noFacturada)),
+            after: accounts.statementTo ? formatYmd(accounts.statementTo) : null,
+          },
+          note: "El precio de las compras avisadas no es el monto a facturar. Si la compra fue en cuotas, la cuota que entra ahora y el saldo que sigue en el utilizado se conocen cuando llega el estado de cuenta.",
+        },
+        cuotasEnUtilizado: {
+          totalFormatted: formatClp(nextCuotas + laterCuotas),
+          entranEnElProximoEstadoFormatted: formatClp(nextCuotas),
+          mesesSiguientesFormatted: formatClp(laterCuotas),
+          statement: await loadStatementSummary(ctx.host.kv),
         },
         cuotas: {
           nextStatementFormatted: formatClp(nextCuotas),
