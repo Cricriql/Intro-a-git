@@ -1,5 +1,6 @@
 import type { ArtifactsApi, HostFilesApi } from "@grok/agent-sdk";
 import { buildDashboardHtml } from "./dashboard-html.js";
+import { loadRecurringPayments } from "./recurring.js";
 import {
   loadGmailSync,
   loadMerchantRules,
@@ -24,6 +25,7 @@ export async function publishDashboard(deps: {
   const transactions = await loadTransactions(deps.kv);
   const rules = await loadMerchantRules(deps.kv);
   const sync = await loadGmailSync(deps.kv);
+  const recurring = await loadRecurringPayments(deps.kv);
   const generatedAt = new Date().toISOString();
   const html = buildDashboardHtml({
     generatedAt,
@@ -31,6 +33,7 @@ export async function publishDashboard(deps: {
     sync,
     transactions,
     learnedMerchants: Object.keys(rules).length,
+    recurring,
   });
 
   await deps.files.write(DASHBOARD_PATH, html, { scope: "deployment" });

@@ -66,13 +66,22 @@ También: `pip install -r requirements.txt` en el entorno del agente (los PDF de
 
 ## Ver el HTML
 
-Tras un sync:
+Tras un sync, con `serve` local el archivo queda en:
 
-1. Artifact `spend-dashboard` → `GET /cuenta-corriente/v1/artifacts/<id>/content`
-2. O archivo durable `dashboard/estado.html` (scope deployment)
-3. O en chat: *“regenera el dashboard y dame el link/id del artifact”*
+```
+cuenta-corriente/.agent-serve/files/deployment/dashboard/estado.html
+```
 
-El HTML se auto-refresca en el navegador cada 15 min (`meta refresh`).
+(En Windows: `start .agent-serve\files\deployment\dashboard\estado.html`.) También se
+publica como artifact `spend-dashboard`. El HTML se auto-refresca cada 15 min.
+
+Contenido:
+
+- **Pagos del mes**: pago de tarjeta de crédito + pagos recurrentes confirmados
+  (`set_recurring_payment`) y sugeridos, con estado pagado / pendiente / atrasado.
+- **Gráfico de torta por mes** con el gasto real por categoría: excluye pagos de
+  tarjeta, saldos y sueldos, y cuenta una sola vez la compra que aparece en el aviso y en el EECC Visa.
+- Totales por categoría y últimos cargos.
 
 ## Uso local rápido
 

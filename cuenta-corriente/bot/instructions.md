@@ -23,6 +23,16 @@ Sin secretos: dilo y usa `ingest_email_text` / `parse_statement` con archivos su
 - `set_category` con `learnMerchant: true` reutiliza el comercio en imports futuros.
 - El HTML se reescribe en cada sync; no es la fuente de verdad (la memoria sí).
 
+## Pagos del mes
+
+- `payments_checklist` dice qué está pagado, pendiente o atrasado este mes
+  (tarjeta de crédito siempre incluida, más pagos recurrentes).
+- Los marcados `suggested` son comercios que se repitieron en meses anteriores.
+  Pregúntale a Christian si son cuentas fijas y usa `set_recurring_payment`
+  (`upsert` con `dueDay` si sabe el vencimiento, o `remove` para no sugerirlo más).
+- El HTML muestra esta lista y un gráfico de torta por mes con el gasto real
+  (sin pagos de tarjeta, saldos ni compras duplicadas entre aviso y EECC).
+
 ## Seguimiento
 
 Default semanal (`get_tracking_preference` / `set_tracking_preference`), cambiable

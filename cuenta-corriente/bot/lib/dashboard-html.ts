@@ -1,4 +1,7 @@
+import { monthKey, monthLabel, shiftMonth, todayInSantiago, type YMD } from "./dates.js";
 import { formatClp } from "./money.js";
+import { monthlyBreakdown, spendTransactions, type MonthBreakdown } from "./monthly.js";
+import { buildChecklist, type ChecklistItem, type RecurringPayment } from "./recurring.js";
 import type { GmailSyncState } from "./store.js";
 import type { StoredTransaction } from "./types.js";
 
@@ -8,7 +11,33 @@ export type DashboardData = {
   sync: GmailSyncState;
   transactions: StoredTransaction[];
   learnedMerchants: number;
+  recurring: RecurringPayment[];
+  today?: YMD;
 };
+
+const MONTHS_SHOWN = 6;
+
+const CATEGORY_COLORS: Record<string, string> = {
+  comida: "#c8553d",
+  supermercado: "#0f5c4c",
+  transporte: "#3d6fb0",
+  suscripciones: "#7a4fa3",
+  transferencias: "#8a8172",
+  salud: "#2f9c8f",
+  fitness: "#d98b2b",
+  donaciones: "#b84f7d",
+  servicios: "#4f7f3a",
+  entretenimiento: "#e0b23b",
+  vivienda: "#6b4a2f",
+  ingresos: "#5aa469",
+  bancario: "#454b55",
+  otros: "#a89f8f",
+  sin_categoria: "#cfc6b6",
+};
+
+function colorFor(category: string): string {
+  return CATEGORY_COLORS[category] ?? "#9c9384";
+}
 
 function escapeHtml(s: string): string {
   return s
@@ -18,52 +47,124 @@ function escapeHtml(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
+function pieSvg(month: MonthBreakdown): string {
+  if (month.total <= 0) return "";
+  const r = 1;
+  let angle = -Math.PI / 2;
+  const slices = month.categories.map((c) => {
+    const fraction = c.total / month.total;
+    const title = `<title>${escapeHtml(c.category)}: ${escapeHtml(formatClp(c.total))} (${Math.round(fraction * 100)}%)</title>`;
+    if (fraction >= 0.9999) {
+      return `<circle cx="0" cy="0" r="${r}" fill="${colorFor(c.category)}">${title}</circle>`;
+    }
+    const start = angle;
+    angle += fraction * Math.PI * 2;
+    const x1 = Math.cos(start) * r;
+    const y1 = Math.sin(start) * r;
+    const x2 = Math.cos(angle) * r;
+    const y2 = Math.sin(angle) * r;
+    const large = fraction > 0.5 ? 1 : 0;
+    return `<path d="M0 0 L${x1.toFixed(4)} ${y1.toFixed(4)} A${r} ${r} 0 ${large} 1 ${x2.toFixed(4)} ${y2.toFixed(4)} Z" fill="${colorFor(c.category)}">${title}</path>`;
+  });
+  return `<svg class="pie" viewBox="-1.05 -1.05 2.1 2.1" role="img" aria-label="Gasto por categoría ${escapeHtml(monthLabel(month.month))}">${slices.join("")}</svg>`;
+}
+
+function monthCard(month: MonthBreakdown, isCurrent: boolean): string {
+  const legend = month.categories
+    .map(
+      (c) => `<li>
+        <span class="dot" style="background:${colorFor(c.category)}"></span>
+        <span class="lname">${escapeHtml(c.category)}</span>
+        <span class="lpct">${Math.round((c.total / month.total) * 100)}%</span>
+        <span class="lamt">${escapeHtml(formatClp(c.total))}</span>
+      </li>`,
+    )
+    .join("");
+  return `<div class="month">
+    <div class="mhead">
+      <span class="mname">${escapeHtml(monthLabel(month.month))}${isCurrent ? ' <span class="badge">en curso</span>' : ""}</span>
+      <span class="mtotal">${escapeHtml(formatClp(month.total))}</span>
+    </div>
+    <div class="mbody">
+      ${pieSvg(month)}
+      <ul class="legend">${legend}</ul>
+    </div>
+    <div class="meta">${month.count} cargos</div>
+  </div>`;
+}
+
+const STATUS_LABEL: Record<ChecklistItem["status"], string> = {
+  pagado: "Pagado",
+  pendiente: "Pendiente",
+  atrasado: "Atrasado",
+};
+
+function checklistRow(item: ChecklistItem): string {
+  const last = item.paid[item.paid.length - 1];
+  const amount = item.paid.length
+    ? formatClp(item.paidTotal)
+    : item.expectedAmount
+      ? `~${formatClp(item.expectedAmount)}`
+      : "—";
+  return `<tr>
+    <td>${escapeHtml(item.name)}${item.suggested ? ' <span class="tag">sugerido</span>' : ""}</td>
+    <td><span class="status ${item.status}">${STATUS_LABEL[item.status]}</span></td>
+    <td class="wide-only">${last ? escapeHtml(last.date) : "—"}</td>
+    <td class="wide-only">${item.dueDay ? `día ${item.dueDay}` : "—"}</td>
+    <td class="num">${escapeHtml(amount)}</td>
+  </tr>`;
+}
+
 export function buildDashboardHtml(data: DashboardData): string {
   const txs = data.transactions;
-  const byCategory = new Map<string, { count: number; total: number }>();
-  let spend = 0;
-  let income = 0;
+  const today = data.today ?? todayInSantiago(new Date(data.generatedAt));
+  const currentMonth = monthKey(today);
+  const previousMonth = shiftMonth(currentMonth, -1);
+
+  const spend = spendTransactions(txs, today);
+  const months = monthlyBreakdown(spend);
+  const totalFor = (key: string) => months.find((m) => m.month === key)?.total ?? 0;
+  const shownMonths = months.slice(0, MONTHS_SHOWN);
+
+  const checklist = buildChecklist(txs, data.recurring, today, currentMonth);
+  const pendingCount = checklist.items.filter((i) => i.status !== "pagado" && !i.suggested).length;
+  const suggestedPending = checklist.items.filter((i) => i.status !== "pagado" && i.suggested).length;
+
   let confirmed = 0;
   let uncategorized = 0;
-
   for (const tx of txs) {
-    if (tx.amount < 0) spend += tx.amount;
-    else income += tx.amount;
     if (tx.category) confirmed += 1;
     else uncategorized += 1;
-    const cat = tx.category ?? tx.proposedCategory ?? "sin_categoria";
-    const b = byCategory.get(cat) ?? { count: 0, total: 0 };
-    b.count += 1;
-    b.total += tx.amount;
-    byCategory.set(cat, b);
   }
 
-  const categories = [...byCategory.entries()]
-    .map(([category, v]) => ({ category, ...v }))
-    .sort((a, b) => a.total - b.total);
-
-  const recent = [...txs]
-    .filter((t) => t.amount < 0)
-    .sort((a, b) => dateKey(b.date) - dateKey(a.date))
-    .slice(0, 25);
-
-  const catRows = categories
+  const byCategory = new Map<string, { count: number; total: number }>();
+  for (const tx of spend) {
+    const b = byCategory.get(tx.effectiveCategory) ?? { count: 0, total: 0 };
+    b.count += 1;
+    b.total += Math.abs(tx.amount);
+    byCategory.set(tx.effectiveCategory, b);
+  }
+  const catRows = [...byCategory.entries()]
+    .sort((a, b) => b[1].total - a[1].total)
     .map(
-      (c) => `<tr>
-      <td>${escapeHtml(c.category)}</td>
-      <td class="num">${c.count}</td>
-      <td class="num">${escapeHtml(formatClp(c.total))}</td>
+      ([category, v]) => `<tr>
+      <td><span class="dot" style="background:${colorFor(category)}"></span>${escapeHtml(category)}</td>
+      <td class="num">${v.count}</td>
+      <td class="num">${escapeHtml(formatClp(v.total))}</td>
     </tr>`,
     )
     .join("\n");
 
+  const recent = [...spend]
+    .sort((a, b) => b.month.localeCompare(a.month) || b.ymd.day - a.ymd.day)
+    .slice(0, 25);
   const txRows = recent
     .map(
       (t) => `<tr>
       <td>${escapeHtml(t.date)}${t.time ? " " + escapeHtml(t.time) : ""}</td>
       <td>${escapeHtml(t.merchant || t.description)}</td>
       <td>${escapeHtml(t.source)}</td>
-      <td>${escapeHtml(t.category ?? t.proposedCategory ?? "—")}</td>
+      <td>${escapeHtml(t.effectiveCategory)}</td>
       <td class="num">${escapeHtml(formatClp(t.amount))}</td>
     </tr>`,
     )
@@ -91,6 +192,7 @@ export function buildDashboardHtml(data: DashboardData): string {
       --card: #fffdf8;
       --accent: #0f5c4c;
       --warn: #8a4b12;
+      --bad: #a3321f;
     }
     * { box-sizing: border-box; }
     body {
@@ -117,7 +219,7 @@ export function buildDashboardHtml(data: DashboardData): string {
     .sub { color: var(--muted); margin: 0 0 1.5rem; }
     .grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
       gap: 0.75rem;
       margin-bottom: 1.5rem;
     }
@@ -128,6 +230,7 @@ export function buildDashboardHtml(data: DashboardData): string {
     }
     .stat .label { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
     .stat .value { font-size: 1.35rem; font-weight: 600; margin-top: 0.35rem; color: var(--accent); }
+    .stat .value.warn { color: var(--warn); }
     section {
       background: var(--card);
       border: 1px solid var(--line);
@@ -148,6 +251,53 @@ export function buildDashboardHtml(data: DashboardData): string {
       color: var(--warn);
       background: #fff7ec;
     }
+    .tag {
+      font-size: 0.72rem;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      padding: 0.05rem 0.35rem;
+      margin-left: 0.25rem;
+    }
+    .status {
+      display: inline-block;
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.15rem 0.5rem;
+      border: 1px solid currentColor;
+    }
+    .status.pagado { color: var(--accent); background: #e9f3ef; }
+    .status.pendiente { color: var(--warn); background: #fff7ec; }
+    .status.atrasado { color: var(--bad); background: #fbebe7; }
+    .dot {
+      display: inline-block;
+      width: 0.7rem;
+      height: 0.7rem;
+      border-radius: 50%;
+      margin-right: 0.45rem;
+      vertical-align: -0.05rem;
+    }
+    .months {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+      gap: 0.75rem;
+    }
+    .month { border: 1px solid var(--line); padding: 0.85rem; background: #fffefb; }
+    .mhead { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-bottom: 0.6rem; }
+    .mname { font-weight: 600; text-transform: capitalize; }
+    .mtotal { font-weight: 600; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .mbody { display: flex; flex-wrap: wrap; gap: 0.85rem; align-items: center; }
+    .pie { width: 120px; height: 120px; flex: none; }
+    .pie path, .pie circle { stroke: #fffdf8; stroke-width: 0.02; }
+    .legend { list-style: none; margin: 0; padding: 0; flex: 1 1 220px; font-size: 0.82rem; min-width: 0; }
+    .legend li { display: flex; align-items: center; gap: 0.4rem; padding: 0.12rem 0; }
+    .legend .dot { margin-right: 0; flex: none; }
+    .lname { flex: 1; min-width: 5rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .lpct { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 2.2rem; text-align: right; }
+    .lamt { font-variant-numeric: tabular-nums; min-width: 5rem; text-align: right; }
+    .stat .hint { font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; }
+    @media (max-width: 560px) {
+      .wide-only { display: none; }
+    }
   </style>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -165,16 +315,41 @@ export function buildDashboardHtml(data: DashboardData): string {
     </p>
 
     <div class="grid">
+      <div class="stat"><div class="label">Gastado ${escapeHtml(monthLabel(currentMonth))}</div><div class="value">${escapeHtml(formatClp(totalFor(currentMonth)))}</div></div>
+      <div class="stat"><div class="label">Gastado ${escapeHtml(monthLabel(previousMonth))}</div><div class="value">${escapeHtml(formatClp(totalFor(previousMonth)))}</div></div>
+      <div class="stat"><div class="label">Pagos pendientes</div><div class="value${pendingCount ? " warn" : ""}">${pendingCount}</div>${
+        suggestedPending ? `<div class="hint">+${suggestedPending} sugeridos</div>` : ""
+      }</div>
       <div class="stat"><div class="label">Movimientos</div><div class="value">${txs.length}</div></div>
-      <div class="stat"><div class="label">Gastado (cargos)</div><div class="value">${escapeHtml(formatClp(Math.abs(spend)))}</div></div>
-      <div class="stat"><div class="label">Ingresos / abonos</div><div class="value">${escapeHtml(formatClp(income))}</div></div>
       <div class="stat"><div class="label">Categorizados</div><div class="value">${confirmed}</div></div>
       <div class="stat"><div class="label">Sin categoría</div><div class="value">${uncategorized}</div></div>
-      <div class="stat"><div class="label">Comercios aprendidos</div><div class="value">${data.learnedMerchants}</div></div>
     </div>
 
     <section>
-      <h2>Por categoría</h2>
+      <h2>Pagos de ${escapeHtml(monthLabel(currentMonth))}</h2>
+      <table>
+        <thead><tr><th>Pago</th><th>Estado</th><th class="wide-only">Fecha</th><th class="wide-only">Vence</th><th class="num">Monto</th></tr></thead>
+        <tbody>
+          ${checklist.items.map(checklistRow).join("\n")}
+        </tbody>
+      </table>
+      <p class="meta">Los pagos desde la cuenta corriente aparecen cuando llega la cartola; las compras con tarjeta, apenas llega el aviso.
+        Los <em>sugeridos</em> se repitieron en meses anteriores: pídele al agente que los confirme, les ponga día de vencimiento o los quite.</p>
+    </section>
+
+    <section>
+      <h2>Gasto por mes y categoría</h2>
+      ${
+        shownMonths.length
+          ? `<div class="months">${shownMonths.map((m) => monthCard(m, m.month === currentMonth)).join("\n")}</div>`
+          : '<p class="meta">Sin gastos aún. Espera el sync o pregunta al agente.</p>'
+      }
+      <p class="meta">Gasto real: no incluye pagos de tarjeta ni saldos, y una compra que aparece en el aviso y en el estado de cuenta Visa se cuenta una sola vez.
+        Comercios aprendidos: ${data.learnedMerchants}.</p>
+    </section>
+
+    <section>
+      <h2>Por categoría (todo el histórico)</h2>
       <table>
         <thead><tr><th>Categoría</th><th class="num">N°</th><th class="num">Total</th></tr></thead>
         <tbody>
@@ -195,17 +370,4 @@ export function buildDashboardHtml(data: DashboardData): string {
   </main>
 </body>
 </html>`;
-}
-
-function dateKey(date: string): number {
-  const m = /^(\d{2})\/(\d{2})(?:\/(\d{2,4}))?$/.exec(date);
-  if (!m) {
-    const iso = Date.parse(date);
-    return Number.isFinite(iso) ? iso : 0;
-  }
-  const day = Number(m[1]);
-  const month = Number(m[2]);
-  let year = m[3] ? Number(m[3]) : 2026;
-  if (year < 100) year += 2000;
-  return year * 10_000 + month * 100 + day;
 }

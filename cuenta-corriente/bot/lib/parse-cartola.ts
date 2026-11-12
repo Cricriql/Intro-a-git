@@ -28,7 +28,7 @@ export function parseCartolaText(text: string): ParsedTransaction[] {
     if (amount === null) continue;
 
     const isCredit =
-      /TRASPASO\s+DE:|TRANSFERENCIA\s+DESDE|ABONO|DEPOSITO|SALDO\s*INICIAL/i.test(
+      /TRASPASO\s+DE:|TRANSFERENCIA\s+DESDE|ABONO|DEPOSITO|SALDO\s*INICIAL|PAGO:?\s*DE\s+(SUELDOS?|ANTICIPO|REMUNERACI)/i.test(
         description,
       );
     const signed = isCredit ? Math.abs(amount) : -Math.abs(amount);
