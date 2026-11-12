@@ -115,10 +115,11 @@ export default defineTool({
         tarjetaFacturada: {
           from: accounts.statementFrom ? formatYmd(accounts.statementFrom) : null,
           to: accounts.statementTo ? formatYmd(accounts.statementTo) : null,
+          totalFormatted: formatClp(sumAmount(accounts.facturada)),
           paidFromChecking: paid
             ? { date: paid.date, totalFormatted: formatClp(Math.abs(paid.amount)) }
             : null,
-          note: "El monto facturado es el cargo por pago de la tarjeta en la cuenta corriente, no la suma de los precios de las compras en cuotas.",
+          note: "El total es la suma de las cuotas (valor cuota) del estado de cuenta. El pago desde la cuenta es una confirmación aparte y puede incluir saldo anterior o intereses que no están en las líneas de compra.",
         },
         tarjetaNoFacturada: {
           conocido: false,

@@ -2,7 +2,7 @@ import { prompt } from "@grok/agent-sdk";
 import { defineTool } from "@grok/agent-sdk/tools";
 import * as z from "zod/v4";
 import { fetchBankMails, readGmailConfig } from "../lib/gmail.js";
-import { parseStatementText } from "../lib/parse-statement.js";
+import { parseStatementText, sourceFromFilename } from "../lib/parse-statement.js";
 import { publishDashboard } from "../lib/publish-dashboard.js";
 import { parseStatementSummary } from "../lib/statement-summary.js";
 import {
@@ -63,9 +63,12 @@ export default defineTool({
 
     for (const mail of mails) {
       maxUid = Math.max(maxUid, mail.uid);
-      const blobs = [mail.text, ...mail.attachmentTexts.map((a) => a.text)].filter(Boolean);
+      const blobs = [
+        { filename: mail.subject, text: mail.text },
+        ...mail.attachmentTexts,
+      ].filter((blob) => blob.text);
       for (const blob of blobs) {
-        await rememberStatementSummary(ctx.host.kv, parseStatementSummary(blob));
+        await rememberStatementSummary(ctx.host.kv, parseStatementSummary(blob.text));
       }
       if (seen.has(mail.messageId)) {
         mailsSkipped += 1;
@@ -75,7 +78,7 @@ export default defineTool({
       let addedHere = 0;
       let source = "unknown";
       for (const blob of blobs) {
-        const parsed = parseStatementText(blob);
+        const parsed = parseStatementText(blob.text, sourceFromFilename(blob.filename));
         if (parsed.transactions.length === 0) continue;
         source = parsed.source;
         const merge = await mergeParsedTransactions(ctx.host.kv, parsed.transactions);

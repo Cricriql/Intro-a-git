@@ -35,7 +35,10 @@ Sin secretos: dilo y usa `ingest_email_text` / `parse_statement` con archivos su
   (`upsert` con `dueDay` si sabe el vencimiento, o `remove` para no sugerirlo más).
 - El HTML muestra esta lista, la separación en tres bloques (cuenta corriente,
   tarjeta facturada y tarjeta no facturada) y un gráfico de torta por mes.
-  Facturada = el cargo "CARGO POR PAGO TC" de la cuenta (lo pagado el mes pasado).
+  Facturada y las cuotas salen de EECCTarjetaVisa.pdf (ESTADO DE CUENTA NACIONAL
+  DE TARJETA DE CRÉDITO): suma de valor cuota, y cuotas restantes por el valor cuota.
+  La cuenta corriente sale de CartolaCuentaCorrienteNacionalMensual.pdf.
+  El cargo "CARGO POR PAGO TC" de la cartola es el pago que salió de la cuenta.
   El monto aún no facturado no se conoce hasta el próximo estado: los avisos traen
   el precio de la compra, y el cupo utilizado incluye cuotas de meses posteriores.
   Separa siempre `cuotasEnUtilizado` (lo que entra en el próximo estado vs lo que

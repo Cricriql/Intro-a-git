@@ -1,6 +1,7 @@
 import { parseCartolaText } from "./parse-cartola.js";
 import { looksLikeCompraAlerta, parseCompraAlertaText } from "./parse-compra-alerta.js";
 import { parseVisaText } from "./parse-visa.js";
+import { parseStatementSummary } from "./statement-summary.js";
 import type { ParsedTransaction, StatementSource } from "./types.js";
 
 export type ParseResult = {
@@ -9,8 +10,28 @@ export type ParseResult = {
   lineCount: number;
 };
 
+/** Filename of the bank PDF, when the mail attachment still has one. */
+export function sourceFromFilename(filename: string): StatementSource | undefined {
+  const name = filename.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (/eecc|tarjeta\s*visa|estado\s+de\s+cuenta\s+tarjeta/i.test(name)) return "visa";
+  if (/cartola|cuenta\s*corriente/i.test(name)) return "cartola";
+  return undefined;
+}
+
 export function detectSource(text: string): StatementSource {
   if (looksLikeCompraAlerta(text)) return "compra_alerta";
+  // Titles first. A column-broken PDF has no "date + reference" on one line,
+  // so counting patterns would miss the document entirely.
+  if (/ESTADO\s+DE\s+CUENTA\s+NACIONAL\s+DE\s+TARJETA\s+DE\s+CR[EÉ]DITO/i.test(text)) {
+    return "visa";
+  }
+  if (/EECC\s*Tarjeta\s*Visa/i.test(text)) return "visa";
+  if (
+    /Cartola\s*Cuenta\s*Corriente\s*Nacional/i.test(text) ||
+    /CARTOLA[\s\S]{0,160}CUENTA\s+CORRIENTE/i.test(text)
+  ) {
+    return "cartola";
+  }
 
   const sample = text.slice(0, 4000);
   const cartolaHits = (sample.match(/^D\d{2}\/\d{2}\s/gm) ?? []).length;
@@ -20,7 +41,7 @@ export function detectSource(text: string): StatementSource {
   if (cartolaHits >= 1) return "cartola";
   if (visaHits >= 1) return "visa";
   if (/CARTOLA|CUENTA\s+CORRIENTE|TRASPASO\s+A:/i.test(sample)) return "cartola";
-  if (/TARJETA\s+DE\s+CR[EÉ]DITO|ESTADO\s+DE\s+CUENTA\s+NACIONAL|UBER\s*EATS/i.test(sample)) {
+  if (/TARJETA\s+DE\s+CR[EÉ]DITO|UBER\s*EATS/i.test(sample)) {
     return "visa";
   }
   return "unknown";
@@ -37,7 +58,11 @@ export function parseStatementText(text: string, sourceHint?: StatementSource): 
     return { source, transactions: parseCartolaText(text), lineCount };
   }
   if (source === "visa") {
-    return { source, transactions: parseVisaText(text), lineCount };
+    return {
+      source,
+      transactions: parseVisaText(text, parseStatementSummary(text)?.periodTo),
+      lineCount,
+    };
   }
 
   const compra = parseCompraAlertaText(text);
@@ -51,7 +76,14 @@ export function parseStatementText(text: string, sourceHint?: StatementSource): 
     return { source: "cartola", transactions: cartola, lineCount };
   }
   if (visa.length > 0) {
-    return { source: "visa", transactions: visa, lineCount };
+    return {
+      source: "visa",
+      transactions: visa.map((tx) => ({
+        ...tx,
+        statementTo: tx.statementTo ?? parseStatementSummary(text)?.periodTo ?? null,
+      })),
+      lineCount,
+    };
   }
   return { source: "unknown", transactions: [], lineCount };
 }

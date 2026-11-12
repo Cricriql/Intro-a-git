@@ -15,6 +15,8 @@ export type ParsedTransaction = {
   currency: "CLP";
   proposedCategory: Category | null;
   cardLast4?: string;
+  /** Statement end date stamped from the EECC header, when the PDF had one. */
+  statementTo?: string | null;
   raw: string;
 };
 

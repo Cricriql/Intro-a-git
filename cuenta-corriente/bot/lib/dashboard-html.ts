@@ -214,12 +214,7 @@ export function buildDashboardHtml(data: DashboardData): string {
   const corrienteShown = view.corriente.filter((tx) => tx.month === corrienteMonth);
   const facturadaTotal = sumAmount(view.facturada);
   const paid = view.cardPayments.find((tx) => /CARGO POR PAGO TC/i.test(tx.description));
-  const extraPay = paid
-    ? view.cardPayments.find(
-        (tx) => tx.date === paid.date && /PAGO TARJETA DE CREDITO/i.test(tx.description),
-      )
-    : undefined;
-  const facturadaHeadline = paid ? Math.abs(paid.amount) : facturadaTotal;
+  const facturadaHeadline = facturadaTotal || (paid ? Math.abs(paid.amount) : 0);
   const plans = openInstallments(txs);
   const nextCuotas = plans.reduce((sum, plan) => sum + plan.nextAmount, 0);
   const laterCuotas = plans.reduce((sum, plan) => sum + plan.laterAmount, 0);
@@ -460,24 +455,31 @@ export function buildDashboardHtml(data: DashboardData): string {
         <div class="avalue">${escapeHtml(formatClp(sumAmount(corrienteShown)))}</div>
         <p class="aperiod">${escapeHtml(monthLabel(corrienteMonth).replace(/^./, (c) => c.toUpperCase()))}</p>
         ${
-          corrienteMonth === currentMonth
-            ? ""
-            : `<p class="meta">${escapeHtml(monthLabel(currentMonth))}: la cartola de este mes todavía no llega.</p>`
+          corrienteShown.length
+            ? corrienteMonth === currentMonth
+              ? ""
+              : `<p class="meta">${escapeHtml(monthLabel(currentMonth))}: la cartola de este mes todavía no llega.</p>`
+            : `<p class="meta">Este número sale de CartolaCuentaCorrienteNacionalMensual.pdf. EECCTarjetaVisa.pdf es el estado de la tarjeta y no trae estos movimientos.</p>`
         }
         ${topCategories(corrienteShown)}
         ${miniRows(corrienteShown)}
       </article>
       <article class="account facturada">
         <h2>Tarjeta facturada</h2>
-        <p class="adesc meta">Lo que pagaste el mes pasado desde la cuenta (cargo por pago de la tarjeta).</p>
+        <p class="adesc meta">Suma de las cuotas que el estado de cuenta cobra este período, no el precio completo.</p>
         <div class="avalue">${escapeHtml(formatClp(facturadaHeadline))}</div>
-        <p class="aperiod">${paid ? `Pagado el ${escapeHtml(paid.date)}` : "Sin pago en la cartola"}</p>
+        <p class="aperiod">${
+          view.statementFrom && view.statementTo
+            ? `Estado al ${escapeHtml(formatYmd(view.statementTo))}`
+            : "Según los movimientos del estado"
+        }</p>
         ${
-          extraPay
-            ? `<p class="meta">El mismo día hubo otro abono a la tarjeta, de ${escapeHtml(formatClp(Math.abs(extraPay.amount)))}.</p>`
-            : ""
+          facturadaTotal
+            ? paid
+              ? `<p class="meta">Pagado desde la cuenta el ${escapeHtml(paid.date)}: ${escapeHtml(formatClp(Math.abs(paid.amount)))}.</p>`
+              : `<p class="meta">Todavía no aparece el pago en la cartola.</p>`
+            : `<p class="meta">Este número sale de EECCTarjetaVisa.pdf, el estado de cuenta nacional de la tarjeta: la suma de la columna valor cuota.</p>`
         }
-        <p class="meta">Las compras en cuotas entran aquí solo por la cuota del mes, no por el precio completo.</p>
       </article>
       <article class="account nofact">
         <h2>Cuotas en el utilizado</h2>
@@ -515,7 +517,7 @@ export function buildDashboardHtml(data: DashboardData): string {
       </table>
       <p class="meta">En el próximo estado entra la cuota de ${escapeHtml(formatClp(nextCuotas))}. ${escapeHtml(formatClp(laterCuotas))} queda en el utilizado para los meses siguientes.
         Las compras avisadas (${escapeHtml(formatClp(noFacturadaTotal))}${noFacturadaByMonth.length ? `, ${escapeHtml(noFacturadaByMonth.join(" · "))}` : ""}) se parten en cuota y saldo cuando el banco las facture.</p>`
-          : `<p class="meta">No hay compras en cuotas en los estados de cuenta leídos.</p>`
+          : `<p class="meta">No hay compras en cuotas leídas. Esas cuotas y montos están en EECCTarjetaVisa.pdf, en las columnas de cuota y valor cuota.</p>`
       }
     </section>
 
