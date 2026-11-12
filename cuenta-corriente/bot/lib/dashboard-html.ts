@@ -267,7 +267,6 @@ export function buildDashboardHtml(data: DashboardData): string {
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta http-equiv="refresh" content="900" />
   <title>cuenta-corriente — estado</title>
   <style>
     :root {
@@ -427,7 +426,6 @@ export function buildDashboardHtml(data: DashboardData): string {
       new Date(data.generatedAt).toLocaleString("es-CL", { timeZone: "America/Santiago" }),
     )} (America/Santiago) · Último sync Gmail: <strong>${escapeHtml(lastSync)}</strong>
       · Mails vistos: ${data.sync.seenMessageIds.length}
-      · <span class="badge">auto-refresh 15 min</span>
     </p>
 
     <div class="splitbar" role="img" aria-label="Proporción entre cuenta corriente, tarjeta facturada y tarjeta no facturada">

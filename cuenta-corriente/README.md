@@ -1,12 +1,13 @@
 # cuenta-corriente
 
-Agente always-on de gastos Banco de Chile: revisa Gmail cada **15 minutos**, actualiza la memoria y regenera un **HTML de estado**.
+Agente de gastos Banco de Chile. Lee Gmail solo cuando se lo pides, guarda los movimientos y regenera un **HTML de estado**.
 
 ## Qué hace (flujo)
 
 ```
+Tú pides “sincroniza”
+   ▼
 Gmail (IMAP solo lectura)
-   │  cada 15 min → schedule gmail-poll
    ▼
 sync_gmail  → parsea avisos / cartola / EECC
    │
@@ -16,43 +17,18 @@ sync_gmail  → parsea avisos / cartola / EECC
          └─ host.files: dashboard/estado.html
 ```
 
-También puedes preguntarle en el playground: *“estado de la cuenta”*, *“sincroniza”*, *“regenera el HTML”*.
+En el playground: *“sincroniza”*, *“estado de la cuenta”*, *“regenera el HTML”*.
 
-## Dejarlo siempre activo
+## Encenderlo
 
-`--dev` **no** dispara el cron solo. Para que corra cada 15 min necesitas una de estas:
-
-### A) Deploy en Cursor (recomendado)
-
-1. Configura secretos en el deployment: `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `STATEMENT_PDF_PASSWORD`.
-2. Desde tu máquina (con cuenta/service account):
+Los secretos van en el deployment o en `.env.local`: `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `STATEMENT_PDF_PASSWORD`.
 
 ```bash
 cd cuenta-corriente
-npx --yes "@grok/agent-sdk@0.5.0" validate --dir .
-npx --yes "@grok/agent-sdk@0.5.0" deploy --dir . --dry-run
-npx --yes "@grok/agent-sdk@0.5.0" deploy --dir .
-```
-
-3. Gestiona el agente en https://cursor.com/dashboard/deployed-agents  
-4. El schedule `gmail-poll` queda activo en hosting; el HTML se actualiza solo.
-
-### B) Servidor propio 24/7
-
-```bash
-cd cuenta-corriente
-# .env.local con los 3 secretos
 npx --yes "@grok/agent-sdk@0.5.0" serve --dir . --mode single
-# sin --dev → los cron sí disparan
 ```
 
-### C) Solo desarrollo
-
-```bash
-npx --yes "@grok/agent-sdk@0.5.0" serve --dir . --mode single --dev
-# forzar poll:
-curl -X POST http://127.0.0.1:3000/cuenta-corriente/v1/dev/schedules/gmail-poll
-```
+El correo no se revisa solo. Mientras el servidor está abierto puedes pedirle que sincronice. El lunes sigue un resumen de lo que ya está en memoria (no lee Gmail); la cadencia se cambia con `set_tracking_preference`.
 
 ## Secretos
 
@@ -73,7 +49,7 @@ cuenta-corriente/.agent-serve/files/deployment/dashboard/estado.html
 ```
 
 (En Windows: `start .agent-serve\files\deployment\dashboard\estado.html`.) También se
-publica como artifact `spend-dashboard`. El HTML se auto-refresca cada 15 min.
+publica como artifact `spend-dashboard`. Se regenera cuando pides una sincronización.
 
 Contenido:
 
